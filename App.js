@@ -1,37 +1,70 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
-import Home from './components/Home';
+import ClassroomsScreen from './components/ClassroomsScreen';
+import ClassroomDetail from './components/ClassroomDetail';
+import ChatScreen from './components/ChatScreen';
+import ProfileScreen from './components/ProfileScreen';
+
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+function HomeStack({ session }) {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: '#58cc02' },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: 'bold' },
+      }}>
+      <Stack.Screen name="Classrooms" options={{ title: 'My Classrooms' }}>
+        {(props) => <ClassroomsScreen {...props} session={session} />}
+      </Stack.Screen>
+      <Stack.Screen name="ClassroomDetail" component={ClassroomDetail} options={{ title: '' }} />
+    </Stack.Navigator>
+  );
+}
 
 export default function App() {
   const [session, setSession] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => listener.subscription.unsubscribe();
   }, []);
 
   if (!session) {
-    return (
-      <>
-        <Auth />
-        <StatusBar style="auto" />
-      </>
-    );
+    return (<><Auth /><StatusBar style="auto" /></>);
   }
 
-  return <Home session={session} />;
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            headerShown: false,
+            tabBarActiveTintColor: '#58cc02',
+            tabBarInactiveTintColor: '#b0b0b0',
+            tabBarLabelStyle: { fontWeight: 'bold', fontSize: 12 },
+            tabBarStyle: { height: 64, paddingBottom: 10, paddingTop: 8 },
+            tabBarIcon: ({ color, size }) => {
+              const icons = { Home: 'home', Chat: 'chatbubble-ellipses', Profile: 'person' };
+              return <Ionicons name={icons[route.name]} size={size} color={color} />;
+            },
+          })}>
+          <Tab.Screen name="Home">{() => <HomeStack session={session} />}</Tab.Screen>
+          <Tab.Screen name="Chat">{() => <ChatScreen session={session} />}</Tab.Screen>
+          <Tab.Screen name="Profile">{() => <ProfileScreen session={session} />}</Tab.Screen>
+        </Tab.Navigator>
+      </NavigationContainer>
+      <StatusBar style="dark" />
+    </SafeAreaProvider>
+  );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' },
-  text: { fontSize: 24, fontWeight: 'bold' },
-  email: { fontSize: 16, color: '#777', marginTop: 8, marginBottom: 30 },
-  button: { backgroundColor: '#ff4b4b', paddingHorizontal: 30, paddingVertical: 14, borderRadius: 10 },
-  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-});
