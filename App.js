@@ -11,6 +11,7 @@ import ClassroomsScreen from './components/ClassroomsScreen';
 import ClassroomDetail from './components/ClassroomDetail';
 import ChatScreen from './components/ChatScreen';
 import ProfileScreen from './components/ProfileScreen';
+import QuizScreen from './components/QuizScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -27,6 +28,7 @@ function HomeStack({ session }) {
         {(props) => <ClassroomsScreen {...props} session={session} />}
       </Stack.Screen>
       <Stack.Screen name="ClassroomDetail" component={ClassroomDetail} options={{ title: '' }} />
+      <Stack.Screen name="Quiz" component={QuizScreen} options={{ title: 'Quiz' }} />
     </Stack.Navigator>
   );
 }

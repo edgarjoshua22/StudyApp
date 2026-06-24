@@ -61,6 +61,12 @@ export default function UploadHandout({ classroomId }) {
       const data = await response.json();
       if (data.error) throw new Error(data.error);
 
+      // 7. Map the new concepts into the second brain (optional — don't fail upload if this errors)
+      try {
+        setMessage('Mapping concepts to your brain...');
+        await fetch(`${API_BASE}/build-brain?classroom_id=${classroomId}`, { method: 'POST' });
+      } catch (_) { /* brain is secondary; ignore */ }
+
       setStatus('done');
       setMessage(`Done! Learned ${data.chunks_saved} sections from ${file.name}.`);
     } catch (e) {
