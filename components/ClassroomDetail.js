@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import UploadHandout from './UploadHandout';
 
 export default function ClassroomDetail({ route, navigation }) {
   const { classroom } = route.params;
@@ -31,6 +32,7 @@ export default function ClassroomDetail({ route, navigation }) {
         <Text style={styles.bannerEmoji}>📘</Text>
         <Text style={styles.name}>{classroom.name}</Text>
         <Text style={styles.semester}>{classroom.semester}</Text>
+        <UploadHandout classroomId={classroom.id} />
       </View>
 
       <View style={styles.comingSoon}>

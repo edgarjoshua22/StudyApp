@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { API_BASE } from '../lib/api';
 
 const AI_MODEL = 'Gemini'; // we'll set the exact model in Phase 2
 
@@ -16,6 +17,7 @@ export default function ChatScreen({ session }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
   const listRef = useRef(null);
 
   useFocusEffect(useCallback(() => {
@@ -26,21 +28,44 @@ export default function ChatScreen({ session }) {
       });
   }, []));
 
-  function send() {
-    if (!input.trim()) return;
-    if (!selected) return;
+  async function send() {
+  if (!input.trim() || !selected || loading) return;
 
-    const userMsg = { id: Date.now().toString(), role: 'user', text: input.trim() };
-    // Placeholder AI reply — replaced with the real Gemini call in Phase 2
-    const aiMsg = {
-      id: (Date.now() + 1).toString(),
-      role: 'ai',
-      text: `🔧 AI connects in Phase 2! Once it's live, I'll answer this using "${selected.name}"'s uploaded materials first, then the web.`,
-    };
-    setMessages((prev) => [...prev, userMsg, aiMsg]);
-    setInput('');
+  const question = input.trim();
+  const userMsg = { id: Date.now().toString(), role: 'user', text: question };
+  const thinkingId = (Date.now() + 1).toString();
+  const thinkingMsg = { id: thinkingId, role: 'ai', text: 'Thinking…' };
+
+  // Show the question + a placeholder reply immediately
+  setMessages((prev) => [...prev, userMsg, thinkingMsg]);
+  setInput('');
+  setLoading(true);
+  setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+
+  try {
+    // Call your backend's /ask endpoint (question + classroom go as query params)
+    const url = `${API_BASE}/ask?question=${encodeURIComponent(question)}&classroom_id=${encodeURIComponent(selected.id)}`;
+    const response = await fetch(url, { method: 'POST' });
+    const data = await response.json();
+    const answer = data.answer || 'Sorry, I could not find an answer.';
+
+    // Replace the "Thinking…" bubble with the real answer
+    setMessages((prev) =>
+      prev.map((m) => (m.id === thinkingId ? { ...m, text: answer } : m))
+    );
+  } catch (e) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === thinkingId
+          ? { ...m, text: '⚠️ Could not reach the tutor. Make sure the backend (Docker) is running.' }
+          : m
+      )
+    );
+  } finally {
+    setLoading(false);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
   }
+}
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
