@@ -8,10 +8,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { supabase } from '../lib/supabase';
 import { API_BASE } from '../lib/api';
+import { palette, space, radius, type, shadow, solid } from '../lib/theme';
 
-const COLORS = ['#58cc02', '#1cb0f6', '#ff9600', '#ce82ff', '#ff4b4b', '#2ec4b6', '#e84393'];
+const COLORS = [
+  palette.green, palette.blue, palette.orange, palette.purple,
+  palette.red, palette.teal, palette.pink,
+];
 
-export default function ProfileScreen({ session }) {
+export default function ProfileScreen({ session, navigation }) {
   const email = session.user.email;
   const [classrooms, setClassrooms] = useState([]);
   const [nodes, setNodes] = useState([]);
@@ -78,7 +82,7 @@ export default function ProfileScreen({ session }) {
       summary: n.summary || '',
       doc: docNameById[n.document_id] || '',
       color: scope === 'all'
-        ? (colorByClassroom[n.classroom_id] || '#58cc02')
+        ? (colorByClassroom[n.classroom_id] || palette.green)
         : (docColorById[n.document_id] || '#9aa0a6'),
     }));
     const gEdges = edges
@@ -131,43 +135,67 @@ export default function ProfileScreen({ session }) {
   const streakAlive = profile?.last_active_date === todayStr || profile?.last_active_date === yesterdayStr;
   const streak = streakAlive ? (profile?.current_streak ?? 0) : 0;
   const totalXp = profile?.xp ?? 0;
+  const longest = profile?.longest_streak ?? 0;
+  const goalReached = goalPct >= 1;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {navigation ? (
+        <TouchableOpacity
+          style={styles.closeBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-down" size={26} color={palette.inkSoft} />
+        </TouchableOpacity>
+      ) : null}
       {/* Identity */}
       <View style={styles.headerRow}>
         <View style={styles.avatar}><Text style={styles.avatarText}>{email[0].toUpperCase()}</Text></View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.email} numberOfLines={1}>{email}</Text>
-          <Text style={styles.sub}>{nodes.length} concepts in your brain</Text>
+          <Text style={styles.email} numberOfLines={1}>{email.split('@')[0]}</Text>
+          <Text style={styles.sub}>🧠 {nodes.length} concepts mapped</Text>
         </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={rebuild} disabled={building} activeOpacity={0.8}>
-          {building ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="sparkles" size={18} color="#fff" />}
+        <TouchableOpacity
+          style={[styles.refreshBtn, solid(palette.purple, palette.purpleDark, radius.pill)]}
+          onPress={rebuild} disabled={building} activeOpacity={0.85}
+        >
+          {building ? <ActivityIndicator color={palette.white} size="small" /> : <Ionicons name="sparkles" size={18} color={palette.white} />}
         </TouchableOpacity>
       </View>
 
       {/* Gamification: daily-goal ring + stat tiles */}
       <View style={styles.statsRow}>
-        <GoalRing size={84} progress={goalPct} color={goalPct >= 1 ? '#ff9600' : '#58cc02'}>
-          <Text style={styles.ringValue}>{dailyXp}</Text>
-          <Text style={styles.ringGoal}>/ {dailyGoal} XP</Text>
-        </GoalRing>
+        <View style={[styles.ringCard, goalReached && { backgroundColor: palette.orangeSoft }]}>
+          <GoalRing size={78} progress={goalPct} color={goalReached ? palette.orange : palette.green}>
+            <Text style={styles.ringValue}>{dailyXp}</Text>
+            <Text style={styles.ringGoal}>/ {dailyGoal}</Text>
+          </GoalRing>
+          <Text style={styles.ringCaption}>{goalReached ? '🏆 Goal done!' : "Today's goal"}</Text>
+        </View>
         <View style={styles.statTiles}>
-          <View style={styles.statTile}>
+          <View style={[styles.statTile, { backgroundColor: palette.orangeSoft }]}>
             <Text style={styles.statNum}>🔥 {streak}</Text>
-            <Text style={styles.statLabel}>day streak</Text>
+            <Text style={[styles.statLabel, { color: palette.orangeDark }]}>day streak</Text>
           </View>
-          <View style={styles.statTile}>
+          <View style={[styles.statTile, { backgroundColor: '#36300f' }]}>
             <Text style={styles.statNum}>⭐ {totalXp}</Text>
-            <Text style={styles.statLabel}>total XP</Text>
+            <Text style={[styles.statLabel, { color: palette.goldDark }]}>total XP</Text>
+          </View>
+          <View style={[styles.statTile, { backgroundColor: palette.purpleSoft }]}>
+            <Text style={styles.statNum}>🏅 {longest}</Text>
+            <Text style={[styles.statLabel, { color: palette.purpleDark }]}>best streak</Text>
           </View>
         </View>
       </View>
 
+      {/* Brain section label */}
+      <Text style={styles.brainLabel}>SECOND BRAIN</Text>
+
       {/* Scope chips */}
       <View style={{ height: 44 }}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-          <Chip label="Whole brain" active={scope === 'all'} onPress={() => setScope('all')} dot="#3c3c3c" />
+          <Chip label="Whole brain" active={scope === 'all'} onPress={() => setScope('all')} dot={palette.ink} />
           {classrooms.map((c) => (
             <Chip key={c.id} label={c.name} active={scope === c.id}
               onPress={() => setScope(c.id)} dot={colorByClassroom[c.id]} />
@@ -190,7 +218,7 @@ export default function ProfileScreen({ session }) {
       )}
       <View style={styles.graphWrap}>
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color="#58cc02" /></View>
+          <View style={styles.center}><ActivityIndicator color={palette.green} /></View>
         ) : hasNodes ? (
           <WebView
             key={`${scope}-${graphKey}`}
@@ -209,8 +237,11 @@ export default function ProfileScreen({ session }) {
             <Text style={styles.emptySub}>
               Upload handouts in a classroom, then tap the ✨ button to map your concepts.
             </Text>
-            <TouchableOpacity style={styles.buildBtn} onPress={rebuild} disabled={building} activeOpacity={0.8}>
-              {building ? <ActivityIndicator color="#fff" /> : <Text style={styles.buildBtnText}>BUILD MY BRAIN</Text>}
+            <TouchableOpacity
+              style={[styles.buildBtn, solid(palette.green, palette.greenDark, radius.lg)]}
+              onPress={rebuild} disabled={building} activeOpacity={0.85}
+            >
+              {building ? <ActivityIndicator color={palette.white} /> : <Text style={styles.buildBtnText}>BUILD MY BRAIN</Text>}
             </TouchableOpacity>
           </View>
         )}
@@ -245,7 +276,7 @@ export default function ProfileScreen({ session }) {
 
 function Chip({ label, active, onPress, dot }) {
   return (
-    <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={onPress} activeOpacity={0.85}>
       <View style={[styles.chipDot, { backgroundColor: dot }]} />
       <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>{label}</Text>
     </TouchableOpacity>
@@ -261,7 +292,7 @@ function GoalRing({ size = 84, progress = 0, color = '#58cc02', children }) {
 <style>html,body{margin:0;padding:0;background:transparent;overflow:hidden;}svg{display:block;}</style>
 </head><body>
 <svg width="${size}" height="${size}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-<circle cx="50" cy="50" r="42" fill="none" stroke="#ededed" stroke-width="11"/>
+<circle cx="50" cy="50" r="42" fill="none" stroke="#37464f" stroke-width="11"/>
 <circle cx="50" cy="50" r="42" fill="none" stroke="${color}" stroke-width="11" stroke-linecap="round"
   stroke-dasharray="${C}" stroke-dashoffset="${(C * (1 - p)).toFixed(2)}" transform="rotate(-90 50 50)"/>
 </svg></body></html>`;
@@ -287,7 +318,7 @@ function buildHtml(graphNodes, graphEdges) {
   const edgesJson = JSON.stringify(graphEdges).replace(/</g, '\\u003c');
   return `<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<style>html,body{margin:0;padding:0;overflow:hidden;background:#fff;}canvas{display:block;touch-action:none;}</style>
+<style>html,body{margin:0;padding:0;overflow:hidden;background:#131f24;}canvas{display:block;touch-action:none;}</style>
 </head><body><canvas id="c"></canvas><script>
 const NODES = ${nodesJson};
 const EDGES = ${edgesJson};
@@ -295,7 +326,10 @@ const canvas=document.getElementById('c');const ctx=canvas.getContext('2d');
 let W=0,H=0;const DPR=window.devicePixelRatio||1;
 function resize(){W=window.innerWidth;H=window.innerHeight;canvas.width=W*DPR;canvas.height=H*DPR;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);}
 resize();window.addEventListener('resize',resize);
-const nodes=NODES.map((n,i)=>({...n,x:W/2+Math.cos(i*1.7)*(50+i*4),y:H/2+Math.sin(i*1.7)*(50+i*4),vx:0,vy:0,r:14,deg:0}));
+// Even, untangled starting spread (golden-angle "sunflower" layout)
+const GA=Math.PI*(3-Math.sqrt(5));
+const SP=Math.min(W,H)*0.05+24;
+const nodes=NODES.map((n,i)=>{const rr=SP*Math.sqrt(i+0.5);const a=i*GA;return {...n,x:W/2+Math.cos(a)*rr,y:H/2+Math.sin(a)*rr,vx:0,vy:0,r:14,deg:0};});
 const byId={};nodes.forEach(n=>byId[n.id]=n);
 const edges=EDGES.filter(e=>byId[e.source]&&byId[e.target]);
 edges.forEach(e=>{byId[e.source].deg++;byId[e.target].deg++;});
@@ -303,24 +337,30 @@ nodes.forEach(n=>{n.r=14+Math.min(n.deg,8)*2;});
 let scale=1,ox=0,oy=0,alpha=1;
 let dragNode=null,panning=false,lastX=0,lastY=0,moved=0,pinch=null;
 function step(){
+  // repulsion + hard collision so nodes never sit on top of each other
   for(let i=0;i<nodes.length;i++){for(let j=i+1;j<nodes.length;j++){
     const a=nodes[i],b=nodes[j];let dx=a.x-b.x,dy=a.y-b.y;let d2=dx*dx+dy*dy+0.01;let d=Math.sqrt(d2);
-    const f=3500/d2;const fx=dx/d*f,fy=dy/d*f;a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;}}
+    let f=4200/d2;const minD=a.r+b.r+12;if(d<minD)f+=(minD-d)*0.9;
+    const fx=dx/d*f,fy=dy/d*f;a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;}}
+  // springs pull linked concepts together
   edges.forEach(e=>{const a=byId[e.source],b=byId[e.target];let dx=b.x-a.x,dy=b.y-a.y;let d=Math.sqrt(dx*dx+dy*dy)+0.01;
-    const f=(d-95)*0.02;const fx=dx/d*f,fy=dy/d*f;a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;});
-  nodes.forEach(n=>{n.vx+=(W/2-n.x)*0.0009;n.vy+=(H/2-n.y)*0.0009;if(n===dragNode)return;n.vx*=0.86;n.vy*=0.86;n.x+=n.vx*alpha;n.y+=n.vy*alpha;});
-  if(alpha>0.04)alpha*=0.992;
+    const f=(d-90)*0.025;const fx=dx/d*f,fy=dy/d*f;a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;});
+  // gentle pull to center + damping
+  nodes.forEach(n=>{n.vx+=(W/2-n.x)*0.0012;n.vy+=(H/2-n.y)*0.0012;if(n===dragNode)return;n.vx*=0.85;n.vy*=0.85;n.x+=n.vx*alpha;n.y+=n.vy*alpha;});
 }
+// Pre-warm the layout BEFORE the first frame, so the brain opens already separated.
+alpha=1;for(let k=0;k<450;k++){step();if(alpha>0.05)alpha*=0.99;}
+alpha=0.05;
 function draw(){
   ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(ox,oy);ctx.scale(scale,scale);
   edges.forEach(e=>{const a=byId[e.source],b=byId[e.target];ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
-    if(e.kind==='shared'){ctx.strokeStyle='#ce82ff';ctx.lineWidth=2;ctx.setLineDash([5,4]);}else{ctx.strokeStyle='#dcdcdc';ctx.lineWidth=1.5;ctx.setLineDash([]);}ctx.stroke();});
+    if(e.kind==='shared'){ctx.strokeStyle='#ce82ff';ctx.lineWidth=2;ctx.setLineDash([5,4]);}else{ctx.strokeStyle='#3a4a53';ctx.lineWidth=1.5;ctx.setLineDash([]);}ctx.stroke();});
   ctx.setLineDash([]);
-  nodes.forEach(n=>{ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,6.2832);ctx.fillStyle=n.color||'#58cc02';ctx.fill();ctx.lineWidth=2.5;ctx.strokeStyle='#fff';ctx.stroke();
-    ctx.fillStyle='#3c3c3c';ctx.font='600 11px -apple-system,Roboto,Helvetica,sans-serif';ctx.textAlign='center';ctx.fillText(n.label,n.x,n.y+n.r+13);});
+  nodes.forEach(n=>{ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,6.2832);ctx.fillStyle=n.color||'#58cc02';ctx.fill();ctx.lineWidth=2.5;ctx.strokeStyle='#131f24';ctx.stroke();
+    ctx.fillStyle='#f4f8fb';ctx.font='600 11px -apple-system,Roboto,Helvetica,sans-serif';ctx.textAlign='center';ctx.fillText(n.label,n.x,n.y+n.r+13);});
   ctx.restore();
 }
-function loop(){step();draw();requestAnimationFrame(loop);}loop();
+function loop(){step();if(alpha>0.02)alpha*=0.995;draw();requestAnimationFrame(loop);}loop();
 function toWorld(px,py){return {x:(px-ox)/scale,y:(py-oy)/scale};}
 function nodeAt(px,py){const p=toWorld(px,py);for(let i=nodes.length-1;i>=0;i--){const n=nodes[i];const dx=p.x-n.x,dy=p.y-n.y;if(dx*dx+dy*dy<=(n.r+6)*(n.r+6))return n;}return null;}
 function pinchInfo(ev){const a=ev.touches[0],b=ev.touches[1];const dx=a.clientX-b.clientX,dy=a.clientY-b.clientY;return{dist:Math.sqrt(dx*dx+dy*dy)||1,mx:(a.clientX+b.clientX)/2,my:(a.clientY+b.clientY)/2};}
@@ -341,56 +381,59 @@ canvas.addEventListener('touchend',ev=>{if(dragNode&&moved<6)post(dragNode);if(e
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingHorizontal: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8, marginBottom: 14 },
-  avatar: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#58cc02', justifyContent: 'center', alignItems: 'center' },
-  avatarText: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  email: { fontSize: 16, color: '#3c3c3c', fontWeight: '700' },
-  sub: { fontSize: 13, color: '#999', marginTop: 2 },
-  refreshBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#ce82ff',
-    borderBottomWidth: 3, borderBottomColor: '#a568cc', justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: palette.bgSoft, paddingHorizontal: space.lg },
+  closeBtn: { alignSelf: 'flex-start', paddingVertical: 4, marginTop: 2 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm, marginBottom: space.lg },
+  avatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: palette.green, borderBottomWidth: 3, borderBottomColor: palette.greenDark, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { fontSize: 24, fontWeight: '800', color: palette.white },
+  email: { fontSize: 20, color: palette.ink, fontWeight: '800', textTransform: 'capitalize' },
+  sub: { fontSize: 13, color: palette.inkSoft, marginTop: 2, fontWeight: '600' },
+  refreshBtn: { width: 46, height: 46, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 3 },
 
-  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 14 },
-  ringValue: { fontSize: 20, fontWeight: 'bold', color: '#3c3c3c', lineHeight: 22 },
-  ringGoal: { fontSize: 11, color: '#999', fontWeight: '600' },
-  statTiles: { flex: 1, flexDirection: 'row', gap: 10 },
-  statTile: { flex: 1, backgroundColor: '#f7f7f7', borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
-  statNum: { fontSize: 18, fontWeight: 'bold', color: '#3c3c3c' },
-  statLabel: { fontSize: 12, color: '#999', marginTop: 2 },
+  statsRow: { flexDirection: 'row', alignItems: 'stretch', gap: space.md, marginBottom: space.lg },
+  ringCard: { backgroundColor: palette.bg, borderRadius: radius.lg, paddingVertical: space.md, paddingHorizontal: space.lg, alignItems: 'center', justifyContent: 'center', ...shadow.card },
+  ringValue: { fontSize: 19, fontWeight: '800', color: palette.ink, lineHeight: 21 },
+  ringGoal: { fontSize: 11, color: palette.inkSoft, fontWeight: '700' },
+  ringCaption: { fontSize: 11, color: palette.inkSoft, fontWeight: '700', marginTop: 6 },
+  statTiles: { flex: 1, flexDirection: 'row', gap: space.sm },
+  statTile: { flex: 1, borderRadius: radius.lg, paddingVertical: space.md, alignItems: 'center', justifyContent: 'center' },
+  statNum: { fontSize: 17, fontWeight: '800', color: palette.ink },
+  statLabel: { fontSize: 11, marginTop: 3, fontWeight: '800' },
 
-  chipRow: { gap: 8, paddingRight: 8, alignItems: 'center' },
+  brainLabel: { ...type.tiny, color: palette.inkSoft, letterSpacing: 1.2, marginBottom: space.sm, marginLeft: 2 },
+
+  chipRow: { gap: space.sm, paddingRight: space.sm, alignItems: 'center' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9,
-    borderRadius: 20, borderWidth: 2, borderColor: '#e5e5e5', backgroundColor: '#fff' },
-  chipActive: { borderColor: '#58cc02', backgroundColor: '#eafce0' },
+    borderRadius: radius.pill, borderWidth: 2, borderColor: palette.line, backgroundColor: palette.bg },
+  chipActive: { borderColor: palette.green, backgroundColor: palette.greenSoft },
   chipDot: { width: 10, height: 10, borderRadius: 5 },
-  chipText: { fontSize: 14, fontWeight: '600', color: '#777', maxWidth: 140 },
-  chipTextActive: { color: '#58a700' },
+  chipText: { fontSize: 14, fontWeight: '700', color: palette.inkSoft, maxWidth: 140 },
+  chipTextActive: { color: palette.greenDark },
 
   legendRow: { gap: 14, paddingHorizontal: 4, alignItems: 'center' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 9, height: 9, borderRadius: 5 },
-  legendText: { fontSize: 12, color: '#888', maxWidth: 140 },
+  legendText: { fontSize: 12, color: palette.inkSoft, maxWidth: 140 },
 
-  graphWrap: { flex: 1, marginTop: 10, borderRadius: 20, overflow: 'hidden', borderWidth: 2, borderColor: '#f0f0f0', backgroundColor: '#fff' },
+  graphWrap: { flex: 1, marginTop: 10, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: palette.bg, ...shadow.card },
   web: { flex: 1, backgroundColor: 'transparent' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
-  hint: { position: 'absolute', bottom: 8, alignSelf: 'center', fontSize: 11, color: '#bbb' },
+  hint: { position: 'absolute', bottom: 8, alignSelf: 'center', fontSize: 11, color: palette.hint },
 
-  emptyEmoji: { fontSize: 56, marginBottom: 12 },
-  emptyTitle: { fontSize: 19, fontWeight: 'bold', color: '#3c3c3c' },
-  emptySub: { fontSize: 14, color: '#999', textAlign: 'center', marginTop: 8, lineHeight: 20, marginBottom: 20 },
-  buildBtn: { backgroundColor: '#58cc02', borderBottomWidth: 4, borderBottomColor: '#58a700',
-    paddingVertical: 14, paddingHorizontal: 28, borderRadius: 14 },
-  buildBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 15, letterSpacing: 0.5 },
+  emptyEmoji: { fontSize: 56, marginBottom: space.md },
+  emptyTitle: { fontSize: 19, fontWeight: '800', color: palette.ink },
+  emptySub: { fontSize: 14, color: palette.inkSoft, textAlign: 'center', marginTop: space.sm, lineHeight: 20, marginBottom: space.xl, fontWeight: '500' },
+  buildBtn: { paddingVertical: 14, paddingHorizontal: 28 },
+  buildBtnText: { color: palette.white, fontWeight: '800', fontSize: 15, letterSpacing: 0.5 },
 
-  signOut: { textAlign: 'center', color: '#bbb', fontSize: 14, fontWeight: '600', paddingVertical: 16 },
+  signOut: { textAlign: 'center', color: palette.hint, fontSize: 14, fontWeight: '700', paddingVertical: space.lg },
 
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
-  sheetHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#e5e5e5', alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { fontSize: 22, fontWeight: 'bold', color: '#3c3c3c', marginBottom: 10 },
-  sheetFrom: { fontSize: 13, color: '#1cb0f6', fontWeight: '600', marginBottom: 10 },
-  sheetSummary: { fontSize: 15, color: '#4b4b4b', lineHeight: 22 },
-  sheetClose: { marginTop: 24, backgroundColor: '#f0f0f0', paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
-  sheetCloseText: { color: '#777', fontWeight: 'bold', letterSpacing: 0.5 },
+  sheet: { backgroundColor: palette.bg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: space.xl, paddingBottom: 36 },
+  sheetHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: palette.line, alignSelf: 'center', marginBottom: space.lg },
+  sheetTitle: { fontSize: 22, fontWeight: '800', color: palette.ink, marginBottom: 10 },
+  sheetFrom: { fontSize: 13, color: palette.blueDark, fontWeight: '700', marginBottom: 10 },
+  sheetSummary: { fontSize: 15, color: palette.ink, lineHeight: 22, fontWeight: '500' },
+  sheetClose: { marginTop: space.xl, backgroundColor: palette.lineSoft, paddingVertical: 14, borderRadius: radius.md, alignItems: 'center' },
+  sheetCloseText: { color: palette.inkSoft, fontWeight: '800', letterSpacing: 0.5 },
 });

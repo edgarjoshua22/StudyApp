@@ -6,6 +6,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
 import { API_BASE } from '../lib/api';
+import { palette } from '../lib/theme';
 
 export default function UploadHandout({ classroomId }) {
   const [status, setStatus] = useState('idle');   // idle | working | done | error
@@ -120,7 +121,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.7 },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  message: { marginTop: 12, textAlign: 'center', color: '#555' },
+  message: { marginTop: 12, textAlign: 'center', color: palette.inkSoft },
   errorText: { color: '#ff4b4b' },
   doneText: { color: '#58cc02', fontWeight: '600' },
 });

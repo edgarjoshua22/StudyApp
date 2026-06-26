@@ -6,6 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { API_BASE } from '../lib/api';
+import { palette } from '../lib/theme';
 
 export default function Prerequisites({ classroom }) {
   const [allClassrooms, setAllClassrooms] = useState([]);
@@ -122,22 +123,22 @@ export default function Prerequisites({ classroom }) {
 
 const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  title: { fontSize: 18, fontWeight: 'bold', color: '#3c3c3c' },
-  addBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ff9600',
-    borderBottomWidth: 3, borderBottomColor: '#cc7a00', justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 18, fontWeight: 'bold', color: palette.ink },
+  addBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: palette.orange,
+    borderBottomWidth: 3, borderBottomColor: palette.orangeDark, justifyContent: 'center', alignItems: 'center' },
   addBtnDisabled: { opacity: 0.4 },
-  empty: { fontSize: 14, color: '#999', lineHeight: 20 },
+  empty: { fontSize: 14, color: palette.inkSoft, lineHeight: 20 },
 
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff7ec',
-    borderWidth: 2, borderColor: '#ffd9a8', borderRadius: 18, paddingLeft: 14, paddingRight: 10, paddingVertical: 8 },
-  chipText: { fontSize: 14, fontWeight: '600', color: '#b36b00' },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: palette.orangeSoft,
+    borderWidth: 2, borderColor: palette.orangeDark, borderRadius: 18, paddingLeft: 14, paddingRight: 10, paddingVertical: 8 },
+  chipText: { fontSize: 14, fontWeight: '600', color: palette.orange },
 
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  sheet: { width: '100%', maxHeight: '60%', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 8 },
-  sheetTitle: { fontSize: 14, fontWeight: '600', color: '#999', paddingHorizontal: 18, paddingVertical: 12 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  sheet: { width: '100%', maxHeight: '60%', backgroundColor: palette.bg, borderRadius: 16, paddingVertical: 8 },
+  sheetTitle: { fontSize: 14, fontWeight: '600', color: palette.inkSoft, paddingHorizontal: 18, paddingVertical: 12 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 15, paddingHorizontal: 18,
-    borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  optionText: { fontSize: 16, color: '#3c3c3c', fontWeight: '500' },
-  noneText: { padding: 20, textAlign: 'center', color: '#999' },
+    borderTopWidth: 1, borderTopColor: palette.lineSoft },
+  optionText: { fontSize: 16, color: palette.ink, fontWeight: '500' },
+  noneText: { padding: 20, textAlign: 'center', color: palette.inkSoft },
 });

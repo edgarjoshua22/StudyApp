@@ -4,21 +4,37 @@ import {
   Alert, ActivityIndicator, Modal, ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { palette, unitColor, subjectEmoji, space, radius, type, shadow, solid } from '../lib/theme';
 
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Mid Year'];
 const CURRENT_YEAR = new Date().getFullYear();
 const START_YEARS = Array.from({ length: 7 }, (_, i) => CURRENT_YEAR - 1 + i);
-const COLORS = ['#58cc02', '#1cb0f6', '#ff9600', '#ce82ff', '#ff4b4b'];
+
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function greetingWord() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+function nameFromEmail(email = '') {
+  const local = (email.split('@')[0] || '').split(/[._\-+0-9]/)[0] || '';
+  return local ? local.charAt(0).toUpperCase() + local.slice(1) : 'there';
+}
 
 function Dropdown({ placeholder, value, options, onSelect }) {
   const [open, setOpen] = useState(false);
   return (
     <View>
-      <TouchableOpacity style={styles.input} onPress={() => setOpen(true)}>
+      <TouchableOpacity style={styles.input} onPress={() => setOpen(true)} activeOpacity={0.7}>
         <Text style={value ? styles.inputText : styles.placeholderText}>{value || placeholder}</Text>
-        <Ionicons name="chevron-down" size={20} color="#aaa" />
+        <Ionicons name="chevron-down" size={20} color={palette.hint} />
       </TouchableOpacity>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setOpen(false)}>
@@ -39,21 +55,42 @@ function Dropdown({ placeholder, value, options, onSelect }) {
   );
 }
 
+function StatChip({ icon, value, label }) {
+  return (
+    <View style={styles.chip}>
+      <Text style={styles.chipIcon}>{icon}</Text>
+      <View>
+        <Text style={styles.chipValue}>{value}</Text>
+        <Text style={styles.chipLabel}>{label}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function ClassroomsScreen({ navigation, session }) {
   const [name, setName] = useState('');
   const [semester, setSemester] = useState('');
   const [startYear, setStartYear] = useState(null);
   const [classrooms, setClassrooms] = useState([]);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
-  useFocusEffect(useCallback(() => { fetchClassrooms(); }, []));
+  useFocusEffect(useCallback(() => { fetchClassrooms(); fetchProfile(); }, []));
 
   async function fetchClassrooms() {
     const { data, error } = await supabase
       .from('classrooms').select('*').order('created_at', { ascending: false });
     if (error) Alert.alert('Could not load classrooms', error.message);
     else setClassrooms(data);
+  }
+
+  async function fetchProfile() {
+    const { data } = await supabase
+      .from('profiles')
+      .select('xp,daily_xp,daily_xp_date,daily_goal,current_streak')
+      .eq('id', session.user.id).maybeSingle();
+    setProfile(data || null);
   }
 
   async function addClassroom() {
@@ -71,86 +108,160 @@ export default function ClassroomsScreen({ navigation, session }) {
     setLoading(false);
   }
 
+  const streak = profile?.current_streak || 0;
+  const xp = profile?.xp || 0;
+  const goal = profile?.daily_goal || 0;
+  const todayXp = profile?.daily_xp_date === localToday() ? (profile?.daily_xp || 0) : 0;
+
+  const Hero = (
+    <View style={styles.hero}>
+      <Text style={styles.heroMascot}>🧠</Text>
+      <Text style={styles.heroOverline}>{greetingWord().toUpperCase()}</Text>
+      <Text style={styles.heroName}>{nameFromEmail(session.user.email)} 👋</Text>
+      <Text style={styles.heroSub}>Ready to build your brain today?</Text>
+      <View style={styles.chipRow}>
+        <StatChip icon="🔥" value={streak} label={streak === 1 ? 'day streak' : 'day streak'} />
+        <StatChip icon="⚡" value={xp} label="total XP" />
+        <StatChip icon="🎯" value={goal ? `${todayXp}/${goal}` : todayXp} label="today" />
+      </View>
+    </View>
+  );
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <FlatList
         data={classrooms}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 20, paddingBottom: 140 }}
+        contentContainerStyle={{ padding: space.xl, paddingBottom: 140 }}
         ListHeaderComponent={
-          showForm ? (
-            <View style={styles.form}>
-              <TextInput style={[styles.input, styles.inputText]}
-                placeholder="Subject name (e.g. Calculus)" placeholderTextColor="#aaa"
-                value={name} onChangeText={setName} />
-              <Dropdown placeholder="Select semester" value={semester}
-                options={SEMESTERS.map((s) => ({ label: s, value: s }))} onSelect={setSemester} />
-              <Dropdown placeholder="Select academic year"
-                value={startYear ? `AY ${startYear}-${startYear + 1}` : ''}
-                options={START_YEARS.map((y) => ({ label: `${y}-${y + 1}`, value: y }))}
-                onSelect={setStartYear} />
-              {loading ? <ActivityIndicator style={{ marginVertical: 12 }} /> : (
-                <TouchableOpacity style={styles.saveButton} onPress={addClassroom}>
-                  <Text style={styles.saveButtonText}>SAVE CLASSROOM</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ) : null
+          <View>
+            {Hero}
+            {showForm ? (
+              <View style={styles.form}>
+                <Text style={styles.formTitle}>New subject</Text>
+                <TextInput style={[styles.input, styles.inputText]}
+                  placeholder="Subject name (e.g. Calculus)" placeholderTextColor={palette.hint}
+                  value={name} onChangeText={setName} />
+                <Dropdown placeholder="Select semester" value={semester}
+                  options={SEMESTERS.map((s) => ({ label: s, value: s }))} onSelect={setSemester} />
+                <Dropdown placeholder="Select academic year"
+                  value={startYear ? `AY ${startYear}-${startYear + 1}` : ''}
+                  options={START_YEARS.map((y) => ({ label: `${y}-${y + 1}`, value: y }))}
+                  onSelect={setStartYear} />
+                {loading ? <ActivityIndicator style={{ marginVertical: 12 }} color={palette.green} /> : (
+                  <TouchableOpacity style={styles.saveButton} onPress={addClassroom} activeOpacity={0.85}>
+                    <Text style={styles.saveButtonText}>SAVE SUBJECT</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : null}
+            {classrooms.length > 0 ? (
+              <Text style={styles.sectionLabel}>
+                YOUR SUBJECTS · {classrooms.length}
+              </Text>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>📚</Text>
-            <Text style={styles.emptyText}>No classrooms yet</Text>
-            <Text style={styles.emptySub}>Tap the + button to add your first subject!</Text>
+            <Text style={styles.emptyText}>No subjects yet</Text>
+            <Text style={styles.emptySub}>Tap the + button to add your first one and start a learning path!</Text>
           </View>
         }
-        renderItem={({ item, index }) => (
-          <TouchableOpacity style={styles.card} activeOpacity={0.7}
-            onPress={() => navigation.navigate('ClassroomDetail', { classroom: item })}>
-            <View style={[styles.cardIcon, { backgroundColor: COLORS[index % COLORS.length] }]}>
-              <Text style={styles.cardEmoji}>📘</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardName}>{item.name}</Text>
-              <Text style={styles.cardSemester}>{item.semester}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={22} color="#ccc" />
-          </TouchableOpacity>
-        )}
+        renderItem={({ item, index }) => {
+          const c = unitColor(index);
+          return (
+            <TouchableOpacity style={styles.card} activeOpacity={0.85}
+              onPress={() => navigation.navigate('ClassroomDetail', { classroom: item })}>
+              <View style={[styles.cardIcon, solid(c.main, c.dark, radius.md)]}>
+                <Text style={styles.cardEmoji}>{subjectEmoji(item.name)}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.cardSemester} numberOfLines={1}>{item.semester}</Text>
+              </View>
+              <View style={[styles.cardArrow, { backgroundColor: c.soft }]}>
+                <Ionicons name="chevron-forward" size={20} color={c.dark} />
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
-      <TouchableOpacity style={styles.fab} onPress={() => setShowForm((v) => !v)} activeOpacity={0.8}>
-        <Ionicons name={showForm ? 'close' : 'add'} size={32} color="#fff" />
+      <TouchableOpacity style={styles.fab} onPress={() => setShowForm((v) => !v)} activeOpacity={0.85}>
+        <Ionicons name={showForm ? 'close' : 'add'} size={32} color={palette.white} />
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  form: { marginBottom: 16 },
-  input: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 2, borderColor: '#e5e5e5', borderRadius: 14, paddingHorizontal: 16, marginBottom: 12, minHeight: 56 },
-  inputText: { fontSize: 16, color: '#3c3c3c', flex: 1 },
-  placeholderText: { fontSize: 16, color: '#aaa', flex: 1 },
-  saveButton: { backgroundColor: '#58cc02', borderBottomWidth: 4, borderBottomColor: '#58a700',
-    paddingVertical: 16, borderRadius: 14, marginTop: 4 },
-  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.5 },
-  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16,
-    padding: 14, marginBottom: 12, borderWidth: 2, borderColor: '#e5e5e5' },
-  cardIcon: { width: 52, height: 52, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  cardEmoji: { fontSize: 26 },
-  cardName: { fontSize: 18, fontWeight: 'bold', color: '#3c3c3c' },
-  cardSemester: { fontSize: 13, color: '#999', marginTop: 3 },
-  empty: { alignItems: 'center', marginTop: 80, paddingHorizontal: 30 },
-  emptyEmoji: { fontSize: 56, marginBottom: 16 },
-  emptyText: { fontSize: 20, fontWeight: 'bold', color: '#3c3c3c' },
-  emptySub: { fontSize: 15, color: '#999', textAlign: 'center', marginTop: 8 },
-  fab: { position: 'absolute', right: 24, bottom: 24, width: 64, height: 64, borderRadius: 32,
-    backgroundColor: '#58cc02', borderBottomWidth: 4, borderBottomColor: '#58a700',
-    justifyContent: 'center', alignItems: 'center', elevation: 6 },
+  container: { flex: 1, backgroundColor: palette.bgSoft },
+
+  // Hero
+  hero: {
+    backgroundColor: palette.green, borderRadius: radius.xl, padding: space.xl,
+    borderBottomWidth: 5, borderBottomColor: palette.greenDark, marginBottom: space.xl,
+    overflow: 'hidden',
+  },
+  heroMascot: { position: 'absolute', right: 14, top: 6, fontSize: 64, opacity: 0.28 },
+  heroOverline: { color: '#eaffd6', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  heroName: { color: palette.white, fontSize: 26, fontWeight: '800', marginTop: 2 },
+  heroSub: { color: '#eaffd6', fontSize: 14, fontWeight: '600', marginTop: 4, marginBottom: space.lg },
+  chipRow: { flexDirection: 'row', gap: space.sm },
+  chip: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: radius.md,
+    paddingVertical: 10, paddingHorizontal: 10,
+  },
+  chipIcon: { fontSize: 20 },
+  chipValue: { color: palette.white, fontSize: 16, fontWeight: '800' },
+  chipLabel: { color: '#eaffd6', fontSize: 10, fontWeight: '700' },
+
+  // Add form
+  form: { marginBottom: space.lg, backgroundColor: palette.bg, borderRadius: radius.lg, padding: space.lg, ...shadow.card },
+  formTitle: { ...type.h3, marginBottom: space.md },
+  input: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 2, borderColor: palette.line, borderRadius: radius.md,
+    paddingHorizontal: space.lg, marginBottom: space.md, minHeight: 56, backgroundColor: palette.bg,
+  },
+  inputText: { fontSize: 16, color: palette.ink, flex: 1 },
+  placeholderText: { fontSize: 16, color: palette.hint, flex: 1 },
+  saveButton: { ...solid(palette.green, palette.greenDark, radius.md), paddingVertical: 16, marginTop: space.xs },
+  saveButtonText: { color: palette.white, fontSize: 16, fontWeight: '800', textAlign: 'center', letterSpacing: 0.5 },
+
+  // Section label
+  sectionLabel: { ...type.tiny, color: palette.inkSoft, letterSpacing: 1, marginBottom: space.md, marginLeft: space.xs },
+
+  // Classroom card
+  card: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: palette.bg,
+    borderRadius: radius.lg, padding: space.md, marginBottom: space.md, ...shadow.card,
+  },
+  cardIcon: { width: 56, height: 56, justifyContent: 'center', alignItems: 'center', marginRight: space.md },
+  cardEmoji: { fontSize: 28 },
+  cardName: { fontSize: 18, fontWeight: '800', color: palette.ink },
+  cardSemester: { fontSize: 13, color: palette.inkSoft, marginTop: 3, fontWeight: '600' },
+  cardArrow: { width: 34, height: 34, borderRadius: radius.sm, justifyContent: 'center', alignItems: 'center', marginLeft: space.sm },
+
+  // Empty
+  empty: { alignItems: 'center', marginTop: 40, paddingHorizontal: 30 },
+  emptyEmoji: { fontSize: 56, marginBottom: space.lg },
+  emptyText: { fontSize: 20, fontWeight: '800', color: palette.ink },
+  emptySub: { fontSize: 15, color: palette.inkSoft, textAlign: 'center', marginTop: space.sm, lineHeight: 22 },
+
+  // FAB
+  fab: {
+    position: 'absolute', right: 24, bottom: 24, width: 64, height: 64, borderRadius: 32,
+    backgroundColor: palette.green, borderBottomWidth: 4, borderBottomColor: palette.greenDark,
+    justifyContent: 'center', alignItems: 'center', ...shadow.lift,
+  },
+
+  // Dropdown sheet
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  sheet: { width: '100%', maxHeight: '60%', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 8 },
-  sheetTitle: { fontSize: 13, fontWeight: '600', color: '#999', paddingHorizontal: 18, paddingVertical: 10 },
-  option: { paddingVertical: 16, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  optionText: { fontSize: 17, color: '#3c3c3c' },
+  sheet: { width: '100%', maxHeight: '60%', backgroundColor: palette.bg, borderRadius: radius.lg, paddingVertical: space.sm },
+  sheetTitle: { fontSize: 13, fontWeight: '700', color: palette.inkSoft, paddingHorizontal: 18, paddingVertical: 10 },
+  option: { paddingVertical: 16, paddingHorizontal: 18, borderTopWidth: 1, borderTopColor: palette.lineSoft },
+  optionText: { fontSize: 17, color: palette.ink },
 });

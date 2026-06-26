@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { palette } from '../lib/theme';
 
 export default function Auth() {
   const [email, setEmail] = useState('');
@@ -30,6 +31,7 @@ export default function Auth() {
       <TextInput
         style={styles.input}
         placeholder="Email"
+        placeholderTextColor={palette.hint}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
@@ -38,6 +40,7 @@ export default function Auth() {
       <TextInput
         style={styles.input}
         placeholder="Password"
+        placeholderTextColor={palette.hint}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -61,12 +64,13 @@ export default function Auth() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  title: { fontSize: 36, fontWeight: 'bold', textAlign: 'center', color: '#1cb0f6' },
-  subtitle: { fontSize: 16, textAlign: 'center', color: '#777', marginBottom: 30 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, marginBottom: 12, fontSize: 16 },
-  button: { backgroundColor: '#1cb0f6', padding: 16, borderRadius: 10, marginTop: 8 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
-  outline: { backgroundColor: '#fff', borderWidth: 2, borderColor: '#1cb0f6' },
-  outlineText: { color: '#1cb0f6' },
+  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: palette.bgSoft },
+  title: { fontSize: 36, fontWeight: 'bold', textAlign: 'center', color: palette.blue },
+  subtitle: { fontSize: 16, textAlign: 'center', color: palette.inkSoft, marginBottom: 30 },
+  input: { borderWidth: 2, borderColor: palette.line, borderRadius: 10, padding: 14, marginBottom: 12,
+    fontSize: 16, backgroundColor: palette.bg, color: palette.ink },
+  button: { backgroundColor: palette.blue, padding: 16, borderRadius: 10, marginTop: 8 },
+  buttonText: { color: palette.white, fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+  outline: { backgroundColor: 'transparent', borderWidth: 2, borderColor: palette.blue },
+  outlineText: { color: palette.blue },
 });

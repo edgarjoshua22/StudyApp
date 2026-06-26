@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { palette, space, radius, type, shadow, solid } from '../lib/theme';
 
 export default function QuizScreen({ route, navigation }) {
-  const { quiz } = route.params;            // { quiz_id, title, questions: [...] }
+  const { quiz, lesson } = route.params;    // quiz: { quiz_id, title, questions }; lesson: { id } | undefined
   const questions = quiz.questions || [];
 
   const [index, setIndex] = useState(0);
@@ -42,6 +44,17 @@ export default function QuizScreen({ route, navigation }) {
       } else if (data) {
         setAward(data);
       }
+
+      // If this quiz was launched from a learning-path node, mark it complete
+      // (atomic upsert in the DB: keeps earliest completion, raises best score).
+      if (lesson?.id) {
+        const { error: lessonErr } = await supabase.rpc('complete_lesson', {
+          p_lesson_id: lesson.id,
+          p_score: score,
+          p_total: questions.length,
+        });
+        if (lessonErr) console.warn('complete_lesson failed:', lessonErr);
+      }
     })();
   }, [finished]);
 
@@ -57,8 +70,9 @@ export default function QuizScreen({ route, navigation }) {
 
   if (questions.length === 0) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.center}>
+          <Text style={styles.emptyEmoji}>🤔</Text>
           <Text style={styles.emptyText}>This quiz has no questions.</Text>
         </View>
       </SafeAreaView>
@@ -69,13 +83,20 @@ export default function QuizScreen({ route, navigation }) {
   if (finished) {
     const pct = Math.round((score / questions.length) * 100);
     const passed = pct >= 70;
+    const ace = pct === 100;
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.center}>
-          <Text style={styles.resultEmoji}>{passed ? '🎉' : '💪'}</Text>
-          <Text style={styles.resultTitle}>{passed ? 'Great job!' : 'Keep practicing!'}</Text>
-          <Text style={styles.resultScore}>{score} / {questions.length}</Text>
-          <Text style={styles.resultPct}>{pct}% correct</Text>
+          <Text style={styles.resultEmoji}>{ace ? '🏆' : passed ? '🎉' : '💪'}</Text>
+          <Text style={styles.resultTitle}>{ace ? 'Perfect!' : passed ? 'Great job!' : 'Keep practicing!'}</Text>
+
+          <View style={styles.scoreCard}>
+            <Text style={styles.resultScore}>{score} / {questions.length}</Text>
+            <View style={styles.resultBarTrack}>
+              <View style={[styles.resultBarFill, { width: `${pct}%`, backgroundColor: passed ? palette.green : palette.orange }]} />
+            </View>
+            <Text style={styles.resultPct}>{pct}% correct</Text>
+          </View>
 
           {award && (
             <View style={styles.xpCard}>
@@ -95,12 +116,14 @@ export default function QuizScreen({ route, navigation }) {
             <Text style={styles.awardErr}>XP didn't save: {awardErr}</Text>
           )}
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={restart} activeOpacity={0.8}>
-            <Text style={styles.primaryBtnText}>TRY AGAIN</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-            <Text style={styles.secondaryBtnText}>DONE</Text>
-          </TouchableOpacity>
+          <View style={styles.footerStretch}>
+            <TouchableOpacity style={[styles.primaryBtn, solid(palette.green, palette.greenDark, radius.lg)]} onPress={restart} activeOpacity={0.85}>
+              <Text style={styles.primaryBtnText}>TRY AGAIN</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+              <Text style={styles.secondaryBtnText}>DONE</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -126,45 +149,59 @@ export default function QuizScreen({ route, navigation }) {
     }
   }
 
-  function choiceStyle(i) {
-    if (!checked) return i === selected ? styles.choiceSelected : styles.choice;
-    if (i === q.correct_index) return styles.choiceCorrect;
-    if (i === selected) return styles.choiceWrong;
-    return styles.choice;
-  }
-  function choiceTextStyle(i) {
-    if (!checked) return i === selected ? styles.choiceTextSelected : styles.choiceText;
-    if (i === q.correct_index) return styles.choiceTextCorrect;
-    if (i === selected) return styles.choiceTextWrong;
-    return styles.choiceText;
+  // returns { box, txt, icon } style decisions per choice
+  function choiceState(i) {
+    if (!checked) {
+      return i === selected
+        ? { box: styles.choiceSelected, txt: styles.choiceTextSelected, icon: null }
+        : { box: styles.choice, txt: styles.choiceText, icon: null };
+    }
+    if (i === q.correct_index) return { box: styles.choiceCorrect, txt: styles.choiceTextCorrect, icon: 'checkmark-circle', iconColor: palette.green };
+    if (i === selected) return { box: styles.choiceWrong, txt: styles.choiceTextWrong, icon: 'close-circle', iconColor: palette.red };
+    return { box: styles.choice, txt: styles.choiceText, icon: null };
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${progress}%` }]} />
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="close" size={28} color={palette.hint} />
+        </TouchableOpacity>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${progress}%` }]} />
+        </View>
+        <Text style={styles.counter}>{index + 1} / {questions.length}</Text>
       </View>
-      <Text style={styles.counter}>Question {index + 1} of {questions.length}</Text>
 
       <ScrollView contentContainerStyle={styles.body}>
-        <Text style={styles.question}>{q.question}</Text>
-        {q.choices.map((choice, i) => (
-          <TouchableOpacity
-            key={i}
-            style={choiceStyle(i)}
-            activeOpacity={0.8}
-            disabled={checked}
-            onPress={() => setSelected(i)}
-          >
-            <Text style={choiceTextStyle(i)}>{choice}</Text>
-          </TouchableOpacity>
-        ))}
+        <View style={styles.askRow}>
+          <Text style={styles.askOwl}>🦉</Text>
+          <View style={styles.askBubble}>
+            <Text style={styles.question}>{q.question}</Text>
+            <View style={styles.askTail} />
+          </View>
+        </View>
+        {q.choices.map((choice, i) => {
+          const st = choiceState(i);
+          return (
+            <TouchableOpacity
+              key={i}
+              style={st.box}
+              activeOpacity={0.85}
+              disabled={checked}
+              onPress={() => setSelected(i)}
+            >
+              <Text style={[st.txt, { flex: 1 }]}>{choice}</Text>
+              {st.icon ? <Ionicons name={st.icon} size={22} color={st.iconColor} /> : null}
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
       {checked && (
         <View style={[styles.feedback, isCorrect ? styles.feedbackGood : styles.feedbackBad]}>
           <Text style={[styles.feedbackTitle, isCorrect ? styles.feedbackTitleGood : styles.feedbackTitleBad]}>
-            {isCorrect ? 'Correct!' : 'Not quite'}
+            {isCorrect ? '✅ Correct!' : '❌ Not quite'}
           </Text>
           {q.explanation ? <Text style={styles.feedbackText}>{q.explanation}</Text> : null}
         </View>
@@ -172,12 +209,18 @@ export default function QuizScreen({ route, navigation }) {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.primaryBtn, selected === null && styles.btnDisabled]}
+          style={[
+            styles.primaryBtn,
+            selected === null
+              ? styles.btnDisabled
+              : solid(checked ? (isCorrect ? palette.green : palette.orange) : palette.green,
+                      checked ? (isCorrect ? palette.greenDark : palette.orangeDark) : palette.greenDark, radius.lg),
+          ]}
           onPress={onAction}
           disabled={selected === null}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
-          <Text style={styles.primaryBtnText}>
+          <Text style={[styles.primaryBtnText, selected === null && styles.btnTextDisabled]}>
             {!checked ? 'CHECK' : isLast ? 'FINISH' : 'CONTINUE'}
           </Text>
         </TouchableOpacity>
@@ -187,52 +230,65 @@ export default function QuizScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: palette.bgSoft },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
-  emptyText: { fontSize: 16, color: '#999' },
 
-  progressTrack: { height: 12, backgroundColor: '#e5e5e5', borderRadius: 6, margin: 16, marginBottom: 8 },
-  progressFill: { height: 12, backgroundColor: '#58cc02', borderRadius: 6 },
-  counter: { fontSize: 13, color: '#999', fontWeight: '600', textAlign: 'center', marginBottom: 4 },
+  askRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: space.xxl },
+  askOwl: { fontSize: 44 },
+  askBubble: { flex: 1, backgroundColor: palette.bg, borderWidth: 2, borderColor: palette.line,
+    borderRadius: radius.lg, padding: space.lg },
+  askTail: { position: 'absolute', left: -9, top: 20, width: 14, height: 14, backgroundColor: palette.bg,
+    borderLeftWidth: 2, borderBottomWidth: 2, borderColor: palette.line, transform: [{ rotate: '45deg' }] },
+  emptyEmoji: { fontSize: 56, marginBottom: space.md },
+  emptyText: { fontSize: 16, color: palette.inkSoft, fontWeight: '600' },
 
-  body: { padding: 20 },
-  question: { fontSize: 22, fontWeight: 'bold', color: '#3c3c3c', marginBottom: 24, lineHeight: 30 },
+  topBar: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingTop: space.lg, paddingBottom: space.sm },
+  progressTrack: { flex: 1, height: 14, backgroundColor: palette.line, borderRadius: 7 },
+  progressFill: { height: 14, backgroundColor: palette.green, borderRadius: 7 },
+  counter: { fontSize: 13, color: palette.inkSoft, fontWeight: '800' },
 
-  choice: { borderWidth: 2, borderColor: '#e5e5e5', borderRadius: 14, padding: 18, marginBottom: 12, backgroundColor: '#fff' },
-  choiceSelected: { borderWidth: 2, borderColor: '#1cb0f6', borderRadius: 14, padding: 18, marginBottom: 12, backgroundColor: '#eaf6ff' },
-  choiceCorrect: { borderWidth: 2, borderColor: '#58a700', borderRadius: 14, padding: 18, marginBottom: 12, backgroundColor: '#d7ffb8' },
-  choiceWrong: { borderWidth: 2, borderColor: '#ea2b2b', borderRadius: 14, padding: 18, marginBottom: 12, backgroundColor: '#ffdfe0' },
-  choiceText: { fontSize: 16, color: '#3c3c3c' },
-  choiceTextSelected: { fontSize: 16, color: '#1899d6', fontWeight: '600' },
-  choiceTextCorrect: { fontSize: 16, color: '#58a700', fontWeight: '600' },
-  choiceTextWrong: { fontSize: 16, color: '#ea2b2b', fontWeight: '600' },
+  body: { padding: space.xl },
+  question: { fontSize: 21, fontWeight: '800', color: palette.ink, lineHeight: 29 },
 
-  feedback: { paddingHorizontal: 20, paddingVertical: 16, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  feedbackGood: { backgroundColor: '#d7ffb8' },
-  feedbackBad: { backgroundColor: '#ffdfe0' },
-  feedbackTitle: { fontSize: 17, fontWeight: 'bold', marginBottom: 4 },
-  feedbackTitleGood: { color: '#58a700' },
-  feedbackTitleBad: { color: '#ea2b2b' },
-  feedbackText: { fontSize: 14, color: '#4b4b4b', lineHeight: 20 },
+  choice: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderBottomWidth: 4, borderColor: palette.line, borderRadius: radius.md, padding: 18, marginBottom: space.md, backgroundColor: palette.bg },
+  choiceSelected: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderBottomWidth: 4, borderColor: palette.blue, borderRadius: radius.md, padding: 18, marginBottom: space.md, backgroundColor: palette.blueSoft },
+  choiceCorrect: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderBottomWidth: 4, borderColor: palette.greenDark, borderRadius: radius.md, padding: 18, marginBottom: space.md, backgroundColor: palette.greenSoft },
+  choiceWrong: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderBottomWidth: 4, borderColor: palette.redDark, borderRadius: radius.md, padding: 18, marginBottom: space.md, backgroundColor: palette.redSoft },
+  choiceText: { fontSize: 16, color: palette.ink, fontWeight: '600' },
+  choiceTextSelected: { fontSize: 16, color: palette.blue, fontWeight: '700' },
+  choiceTextCorrect: { fontSize: 16, color: palette.green, fontWeight: '700' },
+  choiceTextWrong: { fontSize: 16, color: palette.red, fontWeight: '700' },
 
-  footer: { padding: 16, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
-  primaryBtn: { backgroundColor: '#58cc02', borderBottomWidth: 4, borderBottomColor: '#58a700',
-    paddingVertical: 16, borderRadius: 14, alignItems: 'center' },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
-  btnDisabled: { backgroundColor: '#e5e5e5', borderBottomColor: '#cfcfcf' },
-  secondaryBtn: { paddingVertical: 16, borderRadius: 14, alignItems: 'center', marginTop: 12 },
-  secondaryBtnText: { color: '#afafaf', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
+  feedback: { paddingHorizontal: space.xl, paddingVertical: space.lg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl },
+  feedbackGood: { backgroundColor: palette.greenSoft },
+  feedbackBad: { backgroundColor: palette.redSoft },
+  feedbackTitle: { fontSize: 18, fontWeight: '800', marginBottom: 4 },
+  feedbackTitleGood: { color: palette.green },
+  feedbackTitleBad: { color: palette.red },
+  feedbackText: { fontSize: 14, color: palette.ink, lineHeight: 20, fontWeight: '500' },
 
-  resultEmoji: { fontSize: 72, marginBottom: 12 },
-  resultTitle: { fontSize: 26, fontWeight: 'bold', color: '#3c3c3c' },
-  resultScore: { fontSize: 48, fontWeight: 'bold', color: '#58cc02', marginTop: 16 },
-  resultPct: { fontSize: 16, color: '#999', marginTop: 4, marginBottom: 28 },
+  footer: { padding: space.lg, borderTopWidth: 1, borderTopColor: palette.lineSoft },
+  primaryBtn: { paddingVertical: 16, borderRadius: radius.lg, alignItems: 'center' },
+  primaryBtnText: { color: palette.white, fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  btnDisabled: { backgroundColor: palette.line },
+  btnTextDisabled: { color: palette.hint },
+  secondaryBtn: { paddingVertical: 16, borderRadius: radius.lg, alignItems: 'center', marginTop: space.md },
+  secondaryBtnText: { color: palette.hint, fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
 
-  xpCard: { alignSelf: 'stretch', alignItems: 'center', backgroundColor: '#fff7e6',
-    borderWidth: 2, borderColor: '#ffd97a', borderRadius: 18, paddingVertical: 18, paddingHorizontal: 24, marginBottom: 32 },
-  xpEarned: { fontSize: 30, fontWeight: 'bold', color: '#ff9600' },
-  streakLine: { fontSize: 15, color: '#3c3c3c', fontWeight: '600', marginTop: 8 },
-  goalDone: { fontSize: 14, color: '#58a700', fontWeight: '700', marginTop: 6 },
-  goalProg: { fontSize: 13, color: '#999', marginTop: 6 },
-  awardErr: { fontSize: 12, color: '#ea2b2b', textAlign: 'center', marginBottom: 20, paddingHorizontal: 20 },
+  resultEmoji: { fontSize: 76, marginBottom: space.md },
+  resultTitle: { fontSize: 27, fontWeight: '800', color: palette.ink, marginBottom: space.xl },
+  scoreCard: { alignSelf: 'stretch', alignItems: 'center', backgroundColor: palette.bg, borderRadius: radius.xl, paddingVertical: space.xl, marginBottom: space.xl },
+  resultScore: { fontSize: 44, fontWeight: '800', color: palette.green },
+  resultBarTrack: { width: '70%', height: 12, backgroundColor: palette.line, borderRadius: 6, marginTop: space.md },
+  resultBarFill: { height: 12, borderRadius: 6 },
+  resultPct: { fontSize: 14, color: palette.inkSoft, marginTop: space.sm, fontWeight: '700' },
+
+  xpCard: { alignSelf: 'stretch', alignItems: 'center', backgroundColor: palette.orangeSoft, borderWidth: 2, borderColor: palette.orangeDark, borderRadius: radius.lg, paddingVertical: 18, paddingHorizontal: 24, marginBottom: space.xl },
+  xpEarned: { fontSize: 30, fontWeight: '800', color: palette.orange },
+  streakLine: { fontSize: 15, color: palette.ink, fontWeight: '700', marginTop: space.sm },
+  goalDone: { fontSize: 14, color: palette.greenDark, fontWeight: '800', marginTop: 6 },
+  goalProg: { fontSize: 13, color: palette.inkSoft, marginTop: 6, fontWeight: '600' },
+  awardErr: { fontSize: 12, color: palette.redDark, textAlign: 'center', marginBottom: space.xl, paddingHorizontal: 20 },
+
+  footerStretch: { alignSelf: 'stretch' },
 });
