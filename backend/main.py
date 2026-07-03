@@ -722,26 +722,12 @@ def version():
     }
 
 
-@app.get("/debug-owner")
-def debug_owner(classroom_id: str, user_id: str = Depends(verify_user)):
-    """TEMPORARY. Echoes exactly what _require_classroom_owner compares, as the
-    LIVE image computes it, so we can see why an owner gets 403. Remove after."""
-    row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
-    owner = row.get("user_id") if row else None
-    return {
-        "token_user_id": user_id,
-        "classroom_owner_id": owner,
-        "match": owner == user_id,
-        "supabase_url": os.environ.get("SUPABASE_URL", "unset"),
-    }
-
-
 def _require_classroom_owner(user_id: str, classroom_id: str):
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
     if not row:
         raise HTTPException(status_code=404, detail="Classroom not found")
     if row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail=f"owner_mismatch owner={row.get('user_id')!r} token={user_id!r}")
+        raise HTTPException(status_code=403, detail="This classroom belongs to a different account")
 
 
 def _require_document_owner(user_id: str, document_id: str):
@@ -1516,7 +1502,7 @@ def derive_topics(classroom_id: str, plan_id: str = None, source: str = "auto",
 
 
 @app.post("/build-path")
-def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_lesson: int = 2, max_lessons_per_unit: int = 0, rebuild: bool = False, debug: bool = False, user_id: str = Depends(verify_user)):
+def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_lesson: int = 2, max_lessons_per_unit: int = 0, rebuild: bool = False, user_id: str = Depends(verify_user)):
     """Build the Duolingo-style path with TOPICS as the units (Philosophy B pacing).
 
     Each topic (from /derive-topics, ordered by order_index) becomes a unit of short
@@ -1539,15 +1525,6 @@ def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_
     appends only topics not yet built. After re-running /derive-topics, rebuild -- since
     deriving recreates the topic rows.
     """
-    if debug:
-        row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
-        return {
-            "debug": True,
-            "received_classroom_id": classroom_id,
-            "token_user_id": user_id,
-            "classroom_owner_id": (row or {}).get("user_id"),
-            "match": bool(row) and row.get("user_id") == user_id,
-        }
     _require_classroom_owner(user_id, classroom_id)
     rate_limit(user_id, "build-path", 5, 3600)       # 5/hour — heavy background job
     owner_id = _owner_of_classroom(classroom_id)
