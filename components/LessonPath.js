@@ -1,64 +1,23 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, Easing, Modal, Image,
+  View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, Easing, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
-import { palette, radius, subjectEmoji } from '../lib/theme';
-
-// One palette per chapter, cycled. (main = header fill, dark = 3D edge, hex = tile art)
-const UNIT_COLORS = [
-  { main: '#58cc02', dark: '#46a302', hex: 'green' },
-  { main: '#1cb0f6', dark: '#1899d6', hex: 'blue' },
-  { main: '#ce82ff', dark: '#a568cc', hex: 'purple' },
-  { main: '#ff9600', dark: '#e08600', hex: 'orange' },
-  { main: '#ff4b4b', dark: '#d63a3a', hex: 'red' },
-  { main: '#2ec4b6', dark: '#21a195', hex: 'teal' },
-];
-
-// Custom hexagon-tile + icon art (sliced from the Nano Banana sheets).
-const HEX = {
-  green:  require('../assets/icons/hex_green.png'),
-  blue:   require('../assets/icons/hex_blue.png'),
-  purple: require('../assets/icons/hex_purple.png'),
-  orange: require('../assets/icons/hex_orange.png'),
-  red:    require('../assets/icons/hex_red.png'),
-  teal:   require('../assets/icons/hex_teal.png'),
-  locked: require('../assets/icons/hex_locked.png'),
-};
-const STATE_ICON = {
-  play:   require('../assets/icons/icon_play.png'),
-  star:   require('../assets/icons/icon_star.png'),
-  check:  require('../assets/icons/icon_check.png'),
-  trophy: require('../assets/icons/icon_trophy.png'),
-  lock:   require('../assets/icons/icon_lock.png'),
-  crown:  require('../assets/icons/icon_crown.png'),
-};
-const PROP_ICON = {
-  chest: require('../assets/icons/prop_chest.png'),
-  door:  require('../assets/icons/prop_door.png'),
-  char:  require('../assets/icons/prop_mascot.png'),
-  flag:  require('../assets/icons/prop_flag.png'),
-};
-const STAT_ICON = {
-  streak: require('../assets/icons/stat_streak.png'),
-  xp:     require('../assets/icons/stat_xp.png'),
-  goal:   require('../assets/icons/stat_goal.png'),
-};
-const COURSE_ICON = require('../assets/icons/top_course.png');
-// Gentle winding so the trail reads as a path. Amplitude kept modest so nodes,
-// rings and side-props never clip on narrow (~340px) phones.
-const ZIGZAG = [0, 34, 48, 34, 0, -34, -48, -34];
+import { palette, radius, space, shadow, subjectEmoji, unitColor } from '../lib/theme';
+import { GradientButton, ProgressBar as UIProgressBar } from './ui';
+import { MASCOT } from './ui/Mascot';
 
 const CHEERS = [
-  "You're on a roll — keep mapping it out!",
-  'Nice momentum! Each node makes the picture clearer.',
+  "You're on a roll — keep going!",
+  'Nice momentum! Each stop makes it clearer.',
   'One step at a time. You’ve got this!',
-  'Your brain map is growing 🧠',
+  'Your knowledge is growing 🌱',
 ];
 
 function daysUntil(iso) {
@@ -189,7 +148,7 @@ export default function LessonPath({ route, navigation }) {
           u.title = 'Additional material';
           u.kicker = 'BONUS';
         }
-        u.color = UNIT_COLORS[i % UNIT_COLORS.length];
+        u.color = unitColor(i);
         u.exam = examById[docExamId[u.document_id]] || null;
         u.handouts = [...new Set(u.lessons.map((l) => names[l.document_id]).filter(Boolean))];
       });
@@ -220,10 +179,8 @@ export default function LessonPath({ route, navigation }) {
       setActiveUnit(0);
       offsetsRef.current = {};
 
-      // Warm the next couple of tiles in the background so they open instantly.
-      // Non-fatal: if it fails, the tile just generates on-demand when tapped
-      // (openLesson handles that path and surfaces its own errors). We log rather
-      // than swallow so a consistently-failing prewarm is visible, not invisible.
+      // Warm the next couple of stops in the background so they open instantly.
+      // Non-fatal: if it fails, the stop just generates on-demand when tapped.
       if ((lessons || []).length) {
         apiFetch(`/prewarm-lessons?classroom_id=${classroom.id}&count=2`, { method: 'POST' })
           .catch((e) => console.warn('prewarm-lessons failed (non-fatal):', e?.message || e));
@@ -308,7 +265,7 @@ export default function LessonPath({ route, navigation }) {
   }
 
   function mascotLine() {
-    if (allDone) return "You've mapped the whole course. Incredible! 🎉";
+    if (allDone) return "You've finished the whole course. Incredible! 🎉";
     const soon = schedule.find((s) => daysUntil(s.exam_date) >= 0 && daysUntil(s.exam_date) <= 5);
     if (soon) return `${soon.name} is ${countdownLabel(soon.exam_date)} — let's get you ready!`;
     if (doneCount === 0) return 'Ready to dive in? Tap START to begin your first lesson!';
@@ -329,7 +286,7 @@ export default function LessonPath({ route, navigation }) {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={palette.green} />
+        <ActivityIndicator size="large" color={palette.primary} />
       </View>
     );
   }
@@ -345,12 +302,12 @@ export default function LessonPath({ route, navigation }) {
             Build a path from your topics. Each topic becomes a chapter of short lessons,
             with a quiz after each and exam milestones along the way.
           </Text>
-          <TouchableOpacity
-            style={[styles.bigBtn, building && styles.bigBtnDisabled]}
-            onPress={buildPath} disabled={building} activeOpacity={0.8}
-          >
-            {building ? <ActivityIndicator color="#fff" /> : <Text style={styles.bigBtnText}>BUILD MY PATH</Text>}
-          </TouchableOpacity>
+          <GradientButton
+            title="BUILD MY PATH"
+            onPress={buildPath}
+            loading={building}
+            style={{ alignSelf: 'stretch' }}
+          />
         </View>
       </SafeAreaView>
     );
@@ -358,14 +315,13 @@ export default function LessonPath({ route, navigation }) {
 
   // ---------- Path ----------
   const active = units[activeUnit] || units[0];
-  let nodeCounter = -1;
 
   return (
     <View style={styles.container}>
       {/* Sticky top stats bar (streak / XP / daily goal) */}
       <StatsBar stats={stats} insetTop={insets.top} nav={(s) => navigation.navigate(s)} />
 
-      {/* Back affordance (header is hidden for a full-bleed, Duolingo-style top) */}
+      {/* Back affordance (header is hidden for a full-bleed top) */}
       <TouchableOpacity
         style={[styles.backBtn, { top: insets.top + 6 }]}
         onPress={() => navigation.goBack()}
@@ -382,7 +338,7 @@ export default function LessonPath({ route, navigation }) {
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         activeOpacity={0.7}
       >
-        <Image source={COURSE_ICON} style={styles.switchImg} resizeMode="contain" />
+        <Ionicons name="swap-horizontal" size={24} color={palette.primary} />
       </TouchableOpacity>
 
       {/* Sticky unit banner — mirrors whichever chapter you're scrolled to */}
@@ -395,8 +351,13 @@ export default function LessonPath({ route, navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.topStrip}>
-          <Mascot line={mascotLine()} />
-          <ProgressBar done={doneCount} total={flat.length} />
+          <BuddyLine line={mascotLine()} />
+          <View style={{ marginTop: 14 }}>
+            <UIProgressBar progress={flat.length ? doneCount / flat.length : 0} grad="mint" height={14} />
+            <Text style={styles.pbLabel}>
+              {doneCount}/{flat.length} lessons · {flat.length ? Math.round((doneCount / flat.length) * 100) : 0}%
+            </Text>
+          </View>
         </View>
 
         {schedule.length > 0 && (
@@ -419,7 +380,7 @@ export default function LessonPath({ route, navigation }) {
         {allDone && (
           <View style={styles.doneBanner}>
             <Text style={styles.doneBannerEmoji}>🎉</Text>
-            <Text style={styles.doneBannerText}>You've finished every lesson — review any node to keep your streak alive!</Text>
+            <Text style={styles.doneBannerText}>You've finished every lesson — review any stop to keep your streak alive!</Text>
           </View>
         )}
 
@@ -455,43 +416,28 @@ export default function LessonPath({ route, navigation }) {
               style={styles.section}
               onLayout={(e) => { offsetsRef.current[ui] = e.nativeEvent.layout.y; }}
             >
-              <SectionHeader unit={unit} done={uDone} total={quizNodes.length} />
+              <ChapterHeader unit={unit} done={uDone} total={quizNodes.length} />
               <View style={styles.trail}>
                 <View style={styles.spine} />
-                {unit.lessons.map((lesson, li) => {
+                {unit.lessons.map((lesson) => {
                   if (lesson.kind === 'checkpoint') {
                     return <CheckpointMarker key={lesson.id} title={lesson.title} color={unit.color} />;
                   }
-                  nodeCounter += 1;
-                  const offset = ZIGZAG[nodeCounter % ZIGZAG.length];
-                  const isReview = lesson.kind === 'review';
                   return (
-                    <React.Fragment key={lesson.id}>
-                      <LessonNode
-                        lesson={lesson}
-                        state={stateOf(lesson)}
-                        color={unit.color}
-                        offset={offset}
-                        busy={openingId === lesson.id}
-                        onPress={() => {
-                          if (stateOf(lesson) === 'locked') {
-                            Alert.alert('Locked', 'Finish the lesson before this one first.');
-                            return;
-                          }
-                          openLesson(lesson);
-                        }}
-                      />
-                      {/* Decorative props sprinkled along the trail */}
-                      {isReview && (
-                        <TrailProp kind="chest" color={unit.color} side={offset >= 0 ? -1 : 1} />
-                      )}
-                      {!isReview && li === 0 && unit.isBridge && (
-                        <TrailProp kind="door" color={unit.color} side={offset >= 0 ? -1 : 1} />
-                      )}
-                      {!isReview && li === 1 && (
-                        <TrailProp kind="char" color={unit.color} side={offset >= 0 ? -1 : 1} />
-                      )}
-                    </React.Fragment>
+                    <JourneyStop
+                      key={lesson.id}
+                      lesson={lesson}
+                      state={stateOf(lesson)}
+                      color={unit.color}
+                      busy={openingId === lesson.id}
+                      onPress={() => {
+                        if (stateOf(lesson) === 'locked') {
+                          Alert.alert('Locked', 'Finish the lesson before this one first.');
+                          return;
+                        }
+                        openLesson(lesson);
+                      }}
+                    />
                   );
                 })}
               </View>
@@ -500,7 +446,7 @@ export default function LessonPath({ route, navigation }) {
         })}
 
         <TouchableOpacity
-          style={[styles.refreshBtn, building && styles.bigBtnDisabled]}
+          style={[styles.refreshBtn, building && styles.dim]}
           onPress={buildPath} disabled={building} activeOpacity={0.8}
         >
           {building ? <ActivityIndicator color={palette.inkSoft} />
@@ -509,7 +455,7 @@ export default function LessonPath({ route, navigation }) {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.rebuildBtn, building && styles.bigBtnDisabled]}
+          style={[styles.rebuildBtn, building && styles.dim]}
           onPress={confirmRebuild} disabled={building} activeOpacity={0.8}
         >
           <Ionicons name="refresh" size={16} color={palette.red} />
@@ -538,7 +484,7 @@ export default function LessonPath({ route, navigation }) {
                     <Text style={styles.switchEmoji}>{subjectEmoji(c.name)}</Text>
                     <Text style={styles.switchName} numberOfLines={1}>{c.name}</Text>
                     {isCurrent
-                      ? <Ionicons name="checkmark-circle" size={20} color={palette.green} />
+                      ? <Ionicons name="checkmark-circle" size={20} color={palette.primary} />
                       : <Ionicons name="chevron-forward" size={18} color={palette.hint} />}
                   </TouchableOpacity>
                 );
@@ -552,10 +498,10 @@ export default function LessonPath({ route, navigation }) {
 }
 
 // ---------- Top stats bar ----------
-function Stat({ src, color, value, onPress }) {
+function Stat({ icon, color, value, onPress }) {
   return (
     <TouchableOpacity style={styles.statPill} activeOpacity={0.7} onPress={onPress}>
-      <Image source={src} style={styles.statImg} resizeMode="contain" />
+      <Ionicons name={icon} size={18} color={color} />
       <Text style={[styles.statValue, { color }]}>{value}</Text>
     </TouchableOpacity>
   );
@@ -564,9 +510,9 @@ function StatsBar({ stats, insetTop, nav }) {
   const s = stats || {};
   return (
     <View style={[styles.statsBar, { paddingTop: insetTop + 8 }]}>
-      <Stat src={STAT_ICON.streak} color={palette.orange} value={s.streak ?? 0} onPress={() => nav('Streak')} />
-      <Stat src={STAT_ICON.xp} color={palette.gold} value={s.totalXp ?? 0} onPress={() => nav('Quests')} />
-      <Stat src={STAT_ICON.goal} color={palette.green} value={`${s.dailyXp ?? 0}/${s.dailyGoal ?? 0}`} onPress={() => nav('Quests')} />
+      <Stat icon="flame" color={palette.orange} value={s.streak ?? 0} onPress={() => nav('Streak')} />
+      <Stat icon="flash" color={palette.gold} value={s.totalXp ?? 0} onPress={() => nav('Quests')} />
+      <Stat icon="ribbon" color={palette.green} value={`${s.dailyXp ?? 0}/${s.dailyGoal ?? 0}`} onPress={() => nav('Quests')} />
     </View>
   );
 }
@@ -575,7 +521,7 @@ function StatsBar({ stats, insetTop, nav }) {
 function PinnedBanner({ unit }) {
   if (!unit) return null;
   return (
-    <View style={[styles.pinned, { backgroundColor: unit.color.main, borderBottomColor: unit.color.dark }]}>
+    <LinearGradient colors={unit.color.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.pinned}>
       <View style={{ flex: 1 }}>
         <Text style={styles.pinnedKicker} numberOfLines={1}>{unit.kicker}</Text>
         <Text style={styles.pinnedTitle} numberOfLines={1}>{unit.title}</Text>
@@ -583,12 +529,12 @@ function PinnedBanner({ unit }) {
       <View style={styles.guidebook}>
         <Ionicons name="reader" size={22} color={palette.white} />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
-// ---------- Mascot (a friendly brain that reacts to your progress) ----------
-function Mascot({ line }) {
+// ---------- Study buddy line (a friendly face that reacts to progress) ----------
+function BuddyLine({ line }) {
   const bob = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(Animated.sequence([
@@ -599,43 +545,33 @@ function Mascot({ line }) {
     return () => loop.stop();
   }, []);
   return (
-    <View style={styles.mascotRow}>
-      <Animated.Text style={[styles.mascotFace, { transform: [{ translateY: bob }] }]}>🧠</Animated.Text>
-      <View style={styles.mascotBubble}>
-        <Text style={styles.mascotText}>{line}</Text>
-        <View style={styles.mascotTail} />
+    <View style={styles.buddyRow}>
+      <Animated.Text style={[styles.buddyFace, { transform: [{ translateY: bob }] }]}>{MASCOT}</Animated.Text>
+      <View style={styles.buddyBubble}>
+        <Text style={styles.buddyText}>{line}</Text>
+        <View style={styles.buddyTail} />
       </View>
     </View>
   );
 }
 
-function ProgressBar({ done, total }) {
-  const pct = total ? Math.round((done / total) * 100) : 0;
-  return (
-    <View style={styles.pbWrap}>
-      <View style={styles.pbTrack}><View style={[styles.pbFill, { width: `${pct}%` }]} /></View>
-      <Text style={styles.pbLabel}>{done}/{total} lessons · {pct}%</Text>
-    </View>
-  );
-}
-
 // ---------- Chapter header card (topic name + AI intro + handouts + progress) ----------
-function SectionHeader({ unit, done, total }) {
+function ChapterHeader({ unit, done, total }) {
   const pct = total ? Math.round((done / total) * 100) : 0;
   return (
-    <View style={[styles.sectionHeader, { backgroundColor: unit.color.main, borderBottomColor: unit.color.dark }]}>
-      <View style={styles.sectionHeaderTop}>
+    <LinearGradient colors={unit.color.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.chapCard}>
+      <View style={styles.chapTop}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.sectionKicker}>{unit.kicker}</Text>
-          <Text style={styles.sectionTitle} numberOfLines={2}>{unit.title}</Text>
+          <Text style={styles.chapKicker}>{unit.kicker}</Text>
+          <Text style={styles.chapTitle} numberOfLines={2}>{unit.title}</Text>
         </View>
         <View style={styles.guidebook}>
           <Ionicons name="reader" size={22} color={palette.white} />
         </View>
       </View>
       {unit.isBridge
-        ? <Text style={styles.sectionIntro}>Built by AI to fill a gap your handouts skip — upload material on this to replace it.</Text>
-        : (unit.intro ? <Text style={styles.sectionIntro}>{unit.intro}</Text> : null)}
+        ? <Text style={styles.chapIntro}>Built by AI to fill a gap your handouts skip — upload material on this to replace it.</Text>
+        : (unit.intro ? <Text style={styles.chapIntro}>{unit.intro}</Text> : null)}
       {unit.handouts && unit.handouts.length ? (
         <View style={styles.chipRow}>
           {unit.handouts.slice(0, 4).map((h, i) => (
@@ -645,81 +581,62 @@ function SectionHeader({ unit, done, total }) {
           ))}
         </View>
       ) : null}
-      <View style={styles.sectionPbTrack}>
-        <View style={[styles.sectionPbFill, { width: `${pct}%` }]} />
+      <View style={styles.chapPbTrack}>
+        <View style={[styles.chapPbFill, { width: `${pct}%` }]} />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
-// ---------- A single hexagon tile on the winding beehive trail ----------
-function LessonNode({ lesson, state, color, offset, busy, onPress }) {
+// ---------- A single stop on the vertical journey ----------
+function JourneyStop({ lesson, state, color, busy, onPress }) {
   const isReview = lesson.kind === 'review';
   const done = state === 'done';
   const current = state === 'current';
   const locked = state === 'locked';
 
-  const bounce = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (!current) return;
-    const b = Animated.loop(Animated.sequence([
-      Animated.timing(bounce, { toValue: -6, duration: 600, useNativeDriver: true }),
-      Animated.timing(bounce, { toValue: 0, duration: 600, useNativeDriver: true }),
-    ]));
     const p = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1.07, duration: 700, useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1.06, duration: 750, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 750, useNativeDriver: true }),
     ]));
-    b.start(); p.start();
-    return () => { b.stop(); p.stop(); };
+    p.start();
+    return () => p.stop();
   }, [current]);
 
-  const hexSrc = locked ? HEX.locked : (HEX[color.hex] || HEX.green);
-  let iconKey;
-  if (locked) iconKey = 'lock';
-  else if (isReview) iconKey = 'trophy';
-  else if (done) iconKey = 'check';
-  else if (current) iconKey = 'play';
-  else iconKey = 'star';
+  const iconName = locked ? 'lock-closed'
+    : isReview ? 'trophy'
+    : done ? 'checkmark'
+    : current ? 'play' : 'star';
 
   return (
-    <View style={[styles.nodeRow, { transform: [{ translateX: offset }] }]}>
+    <View style={styles.stopRow}>
       {current && (
-        <Animated.View style={[styles.startBubble, { transform: [{ translateY: bounce }] }]}>
-          <Text style={styles.startText}>{done ? 'REVIEW' : 'START'}</Text>
+        <View style={styles.startPill}>
+          <Text style={styles.startPillText}>{done ? 'REVIEW' : 'START'}</Text>
           <View style={styles.startTail} />
-        </Animated.View>
+        </View>
       )}
       <Animated.View style={{ transform: [{ scale: current ? pulse : 1 }] }}>
-        <TouchableOpacity
-          style={styles.hexWrap}
-          activeOpacity={locked ? 1 : 0.85}
-          onPress={onPress}
-          disabled={busy}
-        >
-          <Image source={hexSrc} style={styles.hexImg} resizeMode="contain" />
-          <View style={styles.hexIconWrap}>
-            {busy
-              ? <ActivityIndicator color={locked ? palette.lockedText : '#fff'} />
-              : <Image source={STATE_ICON[iconKey]} style={styles.hexIcon} resizeMode="contain" />}
-          </View>
+        <TouchableOpacity activeOpacity={locked ? 1 : 0.85} onPress={onPress} disabled={busy}>
+          {locked ? (
+            <View style={[styles.stop, styles.stopLocked]}>
+              {busy ? <ActivityIndicator color={palette.lockedText} />
+                : <Ionicons name={iconName} size={30} color={palette.lockedText} />}
+            </View>
+          ) : (
+            <LinearGradient colors={color.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.stop, shadow.card]}>
+              {busy ? <ActivityIndicator color={palette.white} />
+                : <Ionicons name={iconName} size={30} color={palette.white} />}
+            </LinearGradient>
+          )}
         </TouchableOpacity>
       </Animated.View>
-      <Text style={[styles.nodeLabel, locked && styles.nodeLabelLocked]} numberOfLines={1}>
+      <Text style={[styles.stopLabel, locked && styles.stopLabelLocked]} numberOfLines={1}>
         {isReview ? 'Topic quiz' : lesson.title}
       </Text>
-    </View>
-  );
-}
-
-// ---------- Decorative trail props (chest / character / milestone door) ----------
-function TrailProp({ kind, side }) {
-  const shift = 96 * side;
-  const src = PROP_ICON[kind] || PROP_ICON.char;
-  return (
-    <View style={[styles.prop, { transform: [{ translateX: shift }] }]}>
-      <Image source={src} style={styles.propImg} resizeMode="contain" />
     </View>
   );
 }
@@ -728,9 +645,9 @@ function TrailProp({ kind, side }) {
 function CheckpointMarker({ title, color }) {
   return (
     <View style={styles.checkpointRow}>
-      <View style={[styles.checkpointPill, { backgroundColor: color.main, borderColor: color.dark }]}>
-        <Ionicons name="flag" size={15} color="#fff" />
-        <Text style={styles.checkpointText} numberOfLines={2}>{title}</Text>
+      <View style={[styles.checkpointPill, { backgroundColor: color.soft }]}>
+        <Ionicons name="flag" size={15} color={color.dark} />
+        <Text style={[styles.checkpointText, { color: color.dark }]} numberOfLines={2}>{title}</Text>
       </View>
     </View>
   );
@@ -741,27 +658,31 @@ function ExamTile({ unit, node, state, busy, onPress }) {
   const done = state === 'done';
   const locked = state === 'locked';
   const exam = unit.exam;
+  const body = (
+    <>
+      <View style={styles.examIcon}>
+        {busy ? <ActivityIndicator color={locked ? palette.lockedText : palette.white} />
+          : <Ionicons name={done ? 'ribbon' : (locked ? 'lock-closed' : 'school')} size={26} color={locked ? palette.lockedText : palette.white} />}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.examKicker, locked && { color: palette.lockedText }]}>EXAM</Text>
+        <Text style={[styles.examName, locked && { color: palette.lockedText }]} numberOfLines={1}>{node.title}</Text>
+        {exam && exam.exam_date ? (
+          <Text style={[styles.examMeta, locked && { color: palette.lockedText }]}>{countdownLabel(exam.exam_date)}</Text>
+        ) : null}
+      </View>
+      {!locked && !busy ? <Ionicons name="chevron-forward" size={22} color={palette.white} /> : null}
+    </>
+  );
   return (
     <View style={styles.examWrap}>
       <View style={styles.examDivider} />
-      <TouchableOpacity
-        style={[styles.examTile, locked && styles.examTileLocked]}
-        activeOpacity={locked ? 1 : 0.85}
-        onPress={onPress}
-        disabled={busy}
-      >
-        <View style={styles.examIcon}>
-          {busy ? <ActivityIndicator color="#fff" />
-            : <Ionicons name={done ? 'ribbon' : (locked ? 'lock-closed' : 'school')} size={26} color={locked ? palette.lockedText : '#fff'} />}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.examKicker, locked && { color: palette.lockedText }]}>EXAM</Text>
-          <Text style={[styles.examName, locked && { color: palette.lockedText }]} numberOfLines={1}>{node.title}</Text>
-          {exam && exam.exam_date ? (
-            <Text style={[styles.examMeta, locked && { color: palette.lockedText }]}>{countdownLabel(exam.exam_date)}</Text>
-          ) : null}
-        </View>
-        {!locked && !busy ? <Ionicons name="chevron-forward" size={22} color="#fff" /> : null}
+      <TouchableOpacity activeOpacity={locked ? 1 : 0.85} onPress={onPress} disabled={busy} style={{ alignSelf: 'stretch' }}>
+        {locked ? (
+          <View style={[styles.examTile, styles.examTileLocked]}>{body}</View>
+        ) : (
+          <LinearGradient colors={['#ffb36b', '#ff7e6b']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.examTile, shadow.card]}>{body}</LinearGradient>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -772,128 +693,102 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
 
   emptyEmoji: { fontSize: 64, marginBottom: 12 },
-  emptyTitle: { fontSize: 22, fontWeight: 'bold', color: palette.ink, marginBottom: 10 },
+  emptyTitle: { fontSize: 22, fontWeight: '800', color: palette.ink, marginBottom: 10 },
   emptyText: { fontSize: 15, color: palette.inkSoft, textAlign: 'center', lineHeight: 22, marginBottom: 28 },
-  bigBtn: { alignSelf: 'stretch', backgroundColor: palette.green, borderBottomWidth: 4, borderBottomColor: palette.greenDark,
-    paddingVertical: 16, borderRadius: 14, alignItems: 'center' },
-  bigBtnDisabled: { opacity: 0.7 },
-  bigBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', letterSpacing: 0.5 },
+  dim: { opacity: 0.6 },
 
   // Top stats bar
   statsBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingHorizontal: 56, paddingBottom: 10, backgroundColor: palette.bgSoft },
   statPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-    backgroundColor: palette.bg, borderRadius: radius.pill, paddingVertical: 7, paddingHorizontal: 8 },
+    backgroundColor: palette.bg, borderRadius: radius.pill, paddingVertical: 8, paddingHorizontal: 8, ...shadow.card },
   statValue: { fontSize: 15, fontWeight: '800' },
-  statImg: { width: 22, height: 22 },
-  backBtn: { position: 'absolute', left: 8, zIndex: 20, width: 36, height: 36,
-    alignItems: 'center', justifyContent: 'center' },
-  switchBtn: { position: 'absolute', right: 8, zIndex: 20, width: 36, height: 36,
-    alignItems: 'center', justifyContent: 'center' },
-  switchImg: { width: 26, height: 26 },
-  switchBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 28 },
-  switchSheet: { backgroundColor: palette.bg, borderRadius: radius.xl, paddingVertical: 8, maxHeight: '70%' },
+  backBtn: { position: 'absolute', left: 8, zIndex: 20, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  switchBtn: { position: 'absolute', right: 8, zIndex: 20, width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  switchBackdrop: { flex: 1, backgroundColor: 'rgba(30,20,60,0.35)', justifyContent: 'center', padding: 28 },
+  switchSheet: { backgroundColor: palette.bg, borderRadius: radius.xl, paddingVertical: 8, maxHeight: '70%', ...shadow.lift },
   switchTitle: { fontSize: 13, fontWeight: '800', color: palette.inkSoft, paddingHorizontal: 18, paddingVertical: 12, letterSpacing: 0.5 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, paddingVertical: 14, borderTopWidth: 1, borderTopColor: palette.lineSoft },
   switchEmoji: { fontSize: 22 },
   switchName: { flex: 1, fontSize: 16, fontWeight: '700', color: palette.ink },
 
   // Pinned chapter banner
-  pinned: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16,
-    paddingVertical: 12, borderBottomWidth: 4 },
-  pinnedKicker: { fontSize: 11, fontWeight: 'bold', letterSpacing: 1.4, color: 'rgba(255,255,255,0.85)' },
-  pinnedTitle: { fontSize: 18, fontWeight: '800', color: '#fff', marginTop: 1 },
-  guidebook: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.22)',
-    alignItems: 'center', justifyContent: 'center' },
+  pinned: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  pinnedKicker: { fontSize: 11, fontWeight: '800', letterSpacing: 1.4, color: 'rgba(255,255,255,0.9)' },
+  pinnedTitle: { fontSize: 18, fontWeight: '800', color: palette.white, marginTop: 1 },
+  guidebook: { width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center' },
 
-  // Top strip: mascot + overall progress
+  // Top strip: buddy + overall progress
   topStrip: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
-  mascotRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  mascotFace: { fontSize: 40 },
-  mascotBubble: { flex: 1, backgroundColor: palette.bg, borderRadius: 16, borderWidth: 2, borderColor: palette.line,
-    paddingVertical: 10, paddingHorizontal: 14 },
-  mascotText: { fontSize: 14, color: palette.ink, fontWeight: '600', lineHeight: 19 },
-  mascotTail: { position: 'absolute', left: -8, top: 18, width: 14, height: 14, backgroundColor: palette.bg,
-    borderLeftWidth: 2, borderBottomWidth: 2, borderColor: palette.line, transform: [{ rotate: '45deg' }] },
-  pbWrap: { marginTop: 14 },
-  pbTrack: { height: 14, backgroundColor: palette.track, borderRadius: 7, overflow: 'hidden' },
-  pbFill: { height: '100%', backgroundColor: palette.gold, borderRadius: 7 },
-  pbLabel: { fontSize: 12, color: palette.inkSoft, fontWeight: '700', marginTop: 5, textAlign: 'right' },
+  buddyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  buddyFace: { fontSize: 40 },
+  buddyBubble: { flex: 1, backgroundColor: palette.bg, borderRadius: 16, paddingVertical: 10, paddingHorizontal: 14, ...shadow.card },
+  buddyText: { fontSize: 14, color: palette.ink, fontWeight: '600', lineHeight: 19 },
+  buddyTail: { position: 'absolute', left: -7, top: 18, width: 14, height: 14, backgroundColor: palette.bg, transform: [{ rotate: '45deg' }] },
+  pbLabel: { fontSize: 12, color: palette.inkSoft, fontWeight: '700', marginTop: 6, textAlign: 'right' },
 
   // Exam schedule banner
   scheduleWrap: { paddingHorizontal: 16, paddingTop: 12, gap: 10 },
-  scheduleCard: { borderRadius: 14, padding: 14, borderWidth: 2 },
-  scheduleCardOk: { backgroundColor: palette.blueSoft, borderColor: palette.blueDark },
-  scheduleCardWarn: { backgroundColor: palette.orangeSoft, borderColor: palette.orangeDark },
+  scheduleCard: { borderRadius: radius.md, padding: 14 },
+  scheduleCardOk: { backgroundColor: palette.blueSoft },
+  scheduleCardWarn: { backgroundColor: palette.orangeSoft },
   scheduleTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  scheduleName: { flex: 1, fontSize: 15, fontWeight: 'bold', color: palette.ink },
+  scheduleName: { flex: 1, fontSize: 15, fontWeight: '800', color: palette.ink },
   scheduleCountdown: { fontSize: 12, fontWeight: '700', color: palette.inkSoft },
   schedulePace: { fontSize: 13, fontWeight: '600', marginTop: 6 },
-  schedulePaceOk: { color: palette.blue },
-  schedulePaceWarn: { color: palette.orange },
+  schedulePaceOk: { color: palette.blueDark },
+  schedulePaceWarn: { color: palette.orangeDark },
 
-  doneBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.orangeSoft,
-    borderBottomWidth: 1, borderBottomColor: palette.orangeDark, paddingVertical: 14, paddingHorizontal: 20, marginTop: 12 },
+  doneBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: palette.greenSoft,
+    paddingVertical: 14, paddingHorizontal: 20, marginTop: 12, marginHorizontal: 16, borderRadius: radius.md },
   doneBannerEmoji: { fontSize: 26 },
-  doneBannerText: { flex: 1, color: palette.orange, fontSize: 13, fontWeight: '600' },
+  doneBannerText: { flex: 1, color: palette.greenDark, fontSize: 13, fontWeight: '700' },
 
   // Chapter
   section: { marginTop: 22 },
-  sectionHeader: { marginHorizontal: 16, borderRadius: 18, padding: 18, borderBottomWidth: 5 },
-  sectionHeaderTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  sectionKicker: { fontSize: 12, fontWeight: 'bold', letterSpacing: 1.5, color: 'rgba(255,255,255,0.85)', marginBottom: 4 },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
-  sectionIntro: { fontSize: 14, color: 'rgba(255,255,255,0.95)', lineHeight: 20, marginTop: 8 },
+  chapCard: { marginHorizontal: 16, borderRadius: radius.lg, padding: 18 },
+  chapTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  chapKicker: { fontSize: 12, fontWeight: '800', letterSpacing: 1.5, color: 'rgba(255,255,255,0.9)', marginBottom: 4 },
+  chapTitle: { fontSize: 20, fontWeight: '800', color: palette.white },
+  chapIntro: { fontSize: 14, color: 'rgba(255,255,255,0.96)', lineHeight: 20, marginTop: 8 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
-  chip: { backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 10, paddingVertical: 4, paddingHorizontal: 9, maxWidth: 180 },
-  chipText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  sectionPbTrack: { height: 8, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 4, overflow: 'hidden', marginTop: 14 },
-  sectionPbFill: { height: '100%', backgroundColor: '#fff', borderRadius: 4 },
+  chip: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 10, paddingVertical: 4, paddingHorizontal: 9, maxWidth: 180 },
+  chipText: { color: palette.white, fontSize: 11, fontWeight: '700' },
+  chapPbTrack: { height: 8, backgroundColor: 'rgba(255,255,255,0.35)', borderRadius: 4, overflow: 'hidden', marginTop: 14 },
+  chapPbFill: { height: '100%', backgroundColor: palette.white, borderRadius: 4 },
 
-  // Trail
-  trail: { position: 'relative', paddingVertical: 10 },
-  spine: { position: 'absolute', top: 0, bottom: 0, left: '50%', width: 4, marginLeft: -2,
-    backgroundColor: palette.lineSoft, borderRadius: 2 },
+  // Journey trail (straight vertical spine)
+  trail: { position: 'relative', paddingVertical: 12 },
+  spine: { position: 'absolute', top: 8, bottom: 8, left: '50%', width: 4, marginLeft: -2, backgroundColor: palette.line, borderRadius: 2 },
 
-  nodeRow: { alignItems: 'center', marginVertical: 14 },
-  hexWrap: { width: 104, height: 96, alignItems: 'center', justifyContent: 'center' },
-  hexImg: { width: 104, height: 96 },
-  hexIconWrap: { position: 'absolute', width: 104, height: 96, alignItems: 'center', justifyContent: 'center' },
-  hexIcon: { width: 42, height: 42, marginTop: -3 },
-  nodeLabel: { fontSize: 13, fontWeight: '700', color: palette.ink, marginTop: 8, maxWidth: 170, textAlign: 'center' },
-  nodeLabelLocked: { color: palette.lockedText },
+  stopRow: { alignItems: 'center', marginVertical: 12 },
+  stop: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  stopLocked: { backgroundColor: palette.lockedNode },
+  stopLabel: { fontSize: 13, fontWeight: '700', color: palette.ink, marginTop: 8, maxWidth: 200, textAlign: 'center' },
+  stopLabelLocked: { color: palette.lockedText },
 
-  startBubble: { backgroundColor: palette.bg, borderWidth: 2, borderColor: palette.line, borderRadius: 12,
-    paddingHorizontal: 16, paddingVertical: 7, marginBottom: 10 },
-  startText: { color: palette.green, fontWeight: 'bold', fontSize: 13, letterSpacing: 1 },
-  startTail: { position: 'absolute', bottom: -7, alignSelf: 'center', width: 12, height: 12, backgroundColor: palette.bg,
-    borderRightWidth: 2, borderBottomWidth: 2, borderColor: palette.line, transform: [{ rotate: '45deg' }] },
-
-  // Decorative props
-  prop: { alignItems: 'center', justifyContent: 'center', marginVertical: 4, height: 62 },
-  propImg: { width: 60, height: 60 },
+  startPill: { backgroundColor: palette.bg, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 7, marginBottom: 10, ...shadow.card },
+  startPillText: { color: palette.primary, fontWeight: '800', fontSize: 13, letterSpacing: 1 },
+  startTail: { position: 'absolute', bottom: -6, alignSelf: 'center', width: 12, height: 12, backgroundColor: palette.bg, transform: [{ rotate: '45deg' }] },
 
   checkpointRow: { alignItems: 'center', marginVertical: 6, paddingHorizontal: 24 },
-  checkpointPill: { flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 2, borderRadius: 20,
-    paddingVertical: 7, paddingHorizontal: 14, maxWidth: 280 },
-  checkpointText: { fontSize: 13, fontWeight: '700', color: '#fff', flexShrink: 1 },
+  checkpointPill: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 20, paddingVertical: 7, paddingHorizontal: 14, maxWidth: 280 },
+  checkpointText: { fontSize: 13, fontWeight: '700', flexShrink: 1 },
 
   // Exam tile
-  examWrap: { alignItems: 'center', marginTop: 18, marginBottom: 4, paddingHorizontal: 20 },
+  examWrap: { alignItems: 'center', marginTop: 18, marginBottom: 4, paddingHorizontal: 16 },
   examDivider: { width: 2, height: 18, backgroundColor: palette.line, marginBottom: 10 },
-  examTile: { flexDirection: 'row', alignItems: 'center', gap: 12, alignSelf: 'stretch', backgroundColor: palette.orange,
-    borderRadius: 18, padding: 16, borderBottomWidth: 5, borderBottomColor: palette.orangeDark },
-  examTileLocked: { backgroundColor: palette.lockedNode, borderBottomColor: palette.lockedNodeDk },
-  examIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.25)',
-    alignItems: 'center', justifyContent: 'center' },
-  examKicker: { color: '#fff', fontSize: 11, fontWeight: 'bold', letterSpacing: 1.5, opacity: 0.9 },
-  examName: { color: '#fff', fontSize: 17, fontWeight: 'bold', marginTop: 1 },
-  examMeta: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 2, opacity: 0.95 },
+  examTile: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: radius.lg, padding: 16 },
+  examTileLocked: { backgroundColor: palette.lockedNode },
+  examIcon: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center' },
+  examKicker: { color: palette.white, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, opacity: 0.95 },
+  examName: { color: palette.white, fontSize: 17, fontWeight: '800', marginTop: 1 },
+  examMeta: { color: palette.white, fontSize: 12, fontWeight: '600', marginTop: 2, opacity: 0.95 },
 
   refreshBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 32,
-    marginHorizontal: 40, paddingVertical: 12, borderRadius: 12, borderWidth: 2, borderColor: palette.line },
-  refreshText: { color: palette.inkSoft, fontSize: 13, fontWeight: '600' },
+    marginHorizontal: 40, paddingVertical: 12, borderRadius: radius.md, borderWidth: 2, borderColor: palette.line },
+  refreshText: { color: palette.inkSoft, fontSize: 13, fontWeight: '700' },
   rebuildBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12,
-    marginHorizontal: 40, paddingVertical: 12, borderRadius: 12, borderWidth: 2, borderColor: palette.redDark },
-  rebuildText: { color: palette.red, fontSize: 13, fontWeight: '600' },
+    marginHorizontal: 40, paddingVertical: 12, borderRadius: radius.md, borderWidth: 2, borderColor: palette.redSoft },
+  rebuildText: { color: palette.red, fontSize: 13, fontWeight: '700' },
 });

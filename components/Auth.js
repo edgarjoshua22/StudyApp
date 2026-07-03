@@ -6,6 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { supabase } from '../lib/supabase';
 import { palette } from '../lib/theme';
+import { GradientButton, Mascot } from './ui';
 
 // Lets the in-app browser dismiss cleanly after the OAuth redirect.
 WebBrowser.maybeCompleteAuthSession();
@@ -60,8 +61,9 @@ export default function Auth() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <Mascot size={84} style={{ alignSelf: 'center', marginBottom: 16 }} />
       <Text style={styles.title}>StudyApp</Text>
-      <Text style={styles.subtitle}>Log in or create an account</Text>
+      <Text style={styles.subtitle}>Learn anything, your way</Text>
 
       <TextInput
         style={styles.input}
@@ -86,9 +88,7 @@ export default function Auth() {
         <ActivityIndicator style={{ marginTop: 20 }} color={palette.green} />
       ) : (
         <>
-          <TouchableOpacity style={styles.button} onPress={signIn}>
-            <Text style={styles.buttonText}>Log In</Text>
-          </TouchableOpacity>
+          <GradientButton title="Log In" onPress={signIn} style={{ marginTop: 8 }} />
           <TouchableOpacity style={[styles.button, styles.outline]} onPress={signUp}>
             <Text style={[styles.buttonText, styles.outlineText]}>Sign Up</Text>
           </TouchableOpacity>

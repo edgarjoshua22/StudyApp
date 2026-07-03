@@ -8,6 +8,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { palette, space, radius, type, shadow, solid } from '../lib/theme';
+import { GradientButton, Mascot } from './ui';
 import { PRIVACY_POLICY_URL, TERMS_URL, LEGAL_VERSION } from '../lib/legal';
 
 const MIN_AGE = 13;
@@ -72,7 +73,7 @@ export default function Onboarding({ session, onDone }) {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        <Text style={styles.mascot}>🧠</Text>
+        <Mascot size={76} style={{ alignSelf: 'center', marginBottom: space.md }} />
 
         {step === 0 && (
           <>
@@ -96,9 +97,7 @@ export default function Onboarding({ session, onDone }) {
                 </TouchableOpacity>
               </View>
             </View>
-            <TouchableOpacity style={styles.primary} onPress={() => setStep(1)} activeOpacity={0.85}>
-              <Text style={styles.primaryText}>I AGREE & CONTINUE</Text>
-            </TouchableOpacity>
+            <GradientButton title="I Agree & Continue" onPress={() => setStep(1)} style={{ marginTop: space.sm }} />
           </>
         )}
 
@@ -133,9 +132,7 @@ export default function Onboarding({ session, onDone }) {
               />
             )}
 
-            <TouchableOpacity style={styles.primary} onPress={nextFromProfile} activeOpacity={0.85}>
-              <Text style={styles.primaryText}>CONTINUE</Text>
-            </TouchableOpacity>
+            <GradientButton title="Continue" onPress={nextFromProfile} style={{ marginTop: space.sm }} />
           </>
         )}
 
