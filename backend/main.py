@@ -711,8 +711,10 @@ def health():
 def _require_classroom_owner(user_id: str, classroom_id: str):
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
     if not row:
+        _log.warning("OWNERSHIP-DEBUG classroom=%s NOT-FOUND caller=%s", classroom_id, user_id)
         raise HTTPException(status_code=404, detail="Classroom not found")
     if row["user_id"] != user_id:
+        _log.warning("OWNERSHIP-DEBUG classroom=%s owner=%s caller=%s MISMATCH", classroom_id, row["user_id"], user_id)
         raise HTTPException(status_code=403, detail="This classroom belongs to a different account")
 
 
