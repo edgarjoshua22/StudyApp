@@ -456,6 +456,22 @@ export default function ClassroomDetail({ route, navigation }) {
         </LinearGradient>
       </TouchableOpacity>
 
+      {/* Mini-game — light practice */}
+      <TouchableOpacity
+        style={[styles.rowCard, { marginTop: space.md }]}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('MatchGame', { classroom })}
+      >
+        <View style={[styles.rowIcon, { backgroundColor: palette.orangeSoft }]}>
+          <Text style={{ fontSize: 20 }}>🎮</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rowTitle}>Match-up</Text>
+          <Text style={styles.rowMeta}>Race to pair terms with their meanings</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={palette.hint} />
+      </TouchableOpacity>
+
       {/* ---------- MANAGE: exams, handouts, prerequisites (tucked away) ---------- */}
       <TouchableOpacity
         style={styles.manageHeader}

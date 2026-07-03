@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import {
+  View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView,
+  TextInput, KeyboardAvoidingView, Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,10 +22,19 @@ const GRADE_META = {
   easy:  { label: 'Easy',  color: palette.blue,    soft: palette.blueSoft },
 };
 const ORDER = ['again', 'hard', 'good', 'easy'];
+// Active-recall verdicts map onto the SM-2 grades.
+const VERDICT_GRADE = { incorrect: 'again', partial: 'hard', correct: 'good', excellent: 'easy' };
+const VERDICT_META = {
+  incorrect: { label: 'Keep practising', color: palette.red },
+  partial:   { label: 'Almost',          color: palette.orange },
+  correct:   { label: 'Correct',         color: palette.green },
+  excellent: { label: 'Excellent!',      color: palette.blue },
+};
 
 export default function FlashcardsScreen({ route, navigation }) {
   const classroom = route.params?.classroom || null;
 
+  const [mode, setMode] = useState('flip');    // 'flip' (self-grade) | 'recall' (AI-graded)
   const [loading, setLoading] = useState(true);
   const [queue, setQueue] = useState([]);      // remaining cards this session
   const [flipped, setFlipped] = useState(false);
@@ -31,7 +43,18 @@ export default function FlashcardsScreen({ route, navigation }) {
   const [generating, setGenerating] = useState(false);
   const [genMsg, setGenMsg] = useState('');
 
+  // Recall-mode state
+  const [answer, setAnswer] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState(null);  // {verdict,feedback} | {fallback:true} | null
+
   const card = queue[0] || null;
+
+  function resetCardState() {
+    setFlipped(false);
+    setAnswer('');
+    setResult(null);
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -46,7 +69,7 @@ export default function FlashcardsScreen({ route, navigation }) {
     if (classroom) q = q.eq('classroom_id', classroom.id);
     const { data } = await q;
     setQueue(data || []);
-    setFlipped(false);
+    resetCardState();
     setLoading(false);
   }, [classroom]);
 
@@ -64,8 +87,35 @@ export default function FlashcardsScreen({ route, navigation }) {
       // with its freshly-lowered state so the preview stays honest.
       return keepsInSession(g) ? [...rest, { ...first, ...next }] : rest;
     });
-    setFlipped(false);
+    resetCardState();
     setSaving(false);
+  }
+
+  // Recall mode: grade the typed answer with the AI, then map its verdict to SM-2.
+  // If grading is unavailable, degrade to manual self-grade so the session never
+  // dead-ends on a failed LLM call.
+  async function checkAnswer() {
+    if (!card || checking || !answer.trim()) return;
+    setChecking(true);
+    try {
+      const res = await apiFetch('/grade-answer', {
+        method: 'POST',
+        body: JSON.stringify({ prompt: card.front, reference: card.back, answer: answer.trim() }),
+      });
+      const data = await res.json();
+      if (data.error || !data.verdict) setResult({ fallback: true });
+      else setResult({ verdict: data.verdict, feedback: data.feedback });
+    } catch (_) {
+      setResult({ fallback: true });
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  function switchMode(m) {
+    if (m === mode) return;
+    setMode(m);
+    resetCardState();
   }
 
   async function generateDeck() {
@@ -108,6 +158,23 @@ export default function FlashcardsScreen({ route, navigation }) {
         <Text style={styles.counter}>{loading || done ? '' : queue.length}</Text>
       </View>
 
+      {!loading && !done ? (
+        <View style={styles.segment}>
+          {['flip', 'recall'].map((m) => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.segBtn, mode === m && styles.segBtnOn]}
+              onPress={() => switchMode(m)}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.segText, mode === m && styles.segTextOn]}>
+                {m === 'flip' ? '🔄 Flip' : '✍️ Recall'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={palette.primary} size="large" /></View>
       ) : done ? (
@@ -134,6 +201,79 @@ export default function FlashcardsScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
         </View>
+      ) : mode === 'recall' ? (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <ScrollView contentContainerStyle={styles.cardWrap} keyboardShouldPersistTaps="handled">
+            <View style={styles.promptCard}>
+              <Text style={styles.promptTag}>RECALL — WRITE IT FROM MEMORY</Text>
+              <Text style={styles.promptText}>{card.front}</Text>
+            </View>
+
+            {!result ? (
+              <TextInput
+                style={styles.answerInput}
+                placeholder="Type what you remember…"
+                placeholderTextColor={palette.hint}
+                value={answer}
+                onChangeText={setAnswer}
+                multiline
+                editable={!checking}
+              />
+            ) : (
+              <View style={styles.resultCard}>
+                <Text style={[styles.verdict, { color: result.verdict ? VERDICT_META[result.verdict].color : palette.inkSoft }]}>
+                  {result.verdict ? VERDICT_META[result.verdict].label : 'Grade yourself'}
+                </Text>
+                {result.feedback ? <Text style={styles.feedback}>{result.feedback}</Text> : null}
+                {result.fallback ? <Text style={styles.feedback}>Auto-grading is unavailable right now — compare with the answer and grade yourself.</Text> : null}
+                <Text style={styles.refLabel}>ANSWER</Text>
+                <Text style={styles.refText}>{card.back}</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {!result ? (
+            <View style={styles.grades}>
+              <TouchableOpacity
+                style={[styles.revealBtn, (checking || !answer.trim()) && styles.dim]}
+                onPress={checkAnswer}
+                disabled={checking || !answer.trim()}
+                activeOpacity={0.85}
+              >
+                {checking ? <ActivityIndicator color={palette.white} /> : <Text style={styles.revealText}>Check answer</Text>}
+              </TouchableOpacity>
+            </View>
+          ) : result.verdict ? (
+            <View style={styles.grades}>
+              <TouchableOpacity
+                style={[styles.revealBtn, saving && styles.dim]}
+                onPress={() => grade(VERDICT_GRADE[result.verdict])}
+                disabled={saving}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.revealText}>Next</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.grades}>
+              {ORDER.map((g) => {
+                const m = GRADE_META[g];
+                return (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.gradeBtn, { backgroundColor: m.soft }, saving && styles.dim]}
+                    onPress={() => grade(g)}
+                    disabled={saving}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.gradeLabel, { color: m.color }]}>{m.label}</Text>
+                    <Text style={[styles.gradeInt, { color: m.color }]}>{previewInterval(card, g)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </KeyboardAvoidingView>
       ) : (
         <>
           {/* Card */}
@@ -192,7 +332,28 @@ const styles = StyleSheet.create({
   topTitle: { flex: 1, fontSize: 17, fontWeight: '800', color: palette.ink },
   counter: { fontSize: 16, fontWeight: '800', color: palette.inkSoft, minWidth: 24, textAlign: 'right' },
 
+  segment: { flexDirection: 'row', backgroundColor: palette.lineSoft, borderRadius: radius.pill, padding: 4, marginHorizontal: space.xl, marginBottom: space.xs },
+  segBtn: { flex: 1, paddingVertical: 8, borderRadius: radius.pill, alignItems: 'center' },
+  segBtnOn: { backgroundColor: palette.bg, ...shadow.card },
+  segText: { fontSize: 14, fontWeight: '800', color: palette.inkSoft },
+  segTextOn: { color: palette.primary },
+
   cardWrap: { flexGrow: 1, justifyContent: 'center', padding: space.xl },
+
+  // Recall mode
+  promptCard: { backgroundColor: palette.bg, borderRadius: radius.xl, padding: space.xl, ...shadow.card },
+  promptTag: { fontSize: 10, fontWeight: '800', letterSpacing: 1, color: palette.hint, marginBottom: space.sm },
+  promptText: { fontSize: 20, fontWeight: '800', color: palette.ink, lineHeight: 28 },
+  answerInput: {
+    marginTop: space.lg, backgroundColor: palette.bg, borderRadius: radius.lg, borderWidth: 2, borderColor: palette.line,
+    padding: space.lg, minHeight: 120, fontSize: 16, color: palette.ink, textAlignVertical: 'top',
+  },
+  resultCard: { marginTop: space.lg, backgroundColor: palette.bg, borderRadius: radius.lg, padding: space.lg, ...shadow.card },
+  verdict: { fontSize: 18, fontWeight: '800' },
+  feedback: { fontSize: 15, color: palette.ink, lineHeight: 22, marginTop: space.sm },
+  refLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1, color: palette.hint, marginTop: space.lg },
+  refText: { fontSize: 15, color: palette.inkSoft, lineHeight: 22, marginTop: 4, fontWeight: '600' },
+
   card: { borderRadius: radius.xl, padding: space.xxl, minHeight: 260, justifyContent: 'center', alignItems: 'center', ...shadow.card },
   cardTag: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: space.lg },
   cardText: { color: palette.white, fontSize: 22, fontWeight: '800', textAlign: 'center', lineHeight: 30 },

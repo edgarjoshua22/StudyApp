@@ -925,9 +925,41 @@ def _answer_with_web(prompt):
 
 
 @app.post("/ask")
-def ask(question: str, classroom_id: str, history: list = Body(default=[], embed=True), user_id: str = Depends(verify_user)):
+def ask(question: str, classroom_id: str, style: str = None, level: str = None, history: list = Body(default=[], embed=True), user_id: str = Depends(verify_user)):
     _require_classroom_owner(user_id, classroom_id)
     rate_limit(user_id, "ask", 30, 60)          # 30/min — chat is interactive
+
+    # Explainer styles (simple / analogy / example) RESTYLE the previous answer,
+    # which is already handout-grounded. This deliberately skips retrieval: a
+    # "make it simpler" tap embeds as a meta-instruction, so re-running match_chunks
+    # on it would score low, flip covered->False, and fall through to a WEB answer —
+    # silently bypassing handouts-first. Restyling the last answer avoids all that.
+    style_instr = {
+        "simple": "Rewrite it as simply as possible: short sentences, everyday words, no jargon, as if explaining to a curious beginner.",
+        "analogy": "Re-explain it primarily through ONE vivid, everyday analogy the student can picture.",
+        "example": "Re-explain it by walking through ONE concrete worked example, step by step.",
+    }.get((style or "").lower())
+    if style_instr:
+        last_answer = ""
+        for turn in reversed(history or []):
+            if isinstance(turn, dict) and turn.get("role") != "user" and (turn.get("text") or "").strip():
+                last_answer = turn["text"].strip()
+                break
+        if last_answer:
+            tone = "Use language a young learner can follow. " if (level or "").lower() == "kid" else ""
+            rprompt = (
+                f"You are StudyBuddy, a warm study tutor. {tone}{style_instr}\n"
+                "Keep it accurate and grounded in the same facts — do not introduce new claims or restate the question.\n\n"
+                f"EXPLANATION TO REWRITE:\n{last_answer}"
+            )
+            try:
+                response, used_model = llm.generate("standard", contents=rprompt)
+                return {"answer": response.text, "model": used_model, "sources": [], "web_sources": []}
+            except Exception:
+                return {"answer": "Your study buddy is over today's limit. Please try again shortly.",
+                        "model": None, "sources": [], "web_sources": []}
+        # No prior answer to restyle: fall through and answer the question normally.
+
     # 1. Retrieve the most relevant handout chunks (the PRIMARY knowledge base).
     query_embedding = embed_text(question, "RETRIEVAL_QUERY")
     matches = supabase.rpc("match_chunks", {
@@ -1156,6 +1188,57 @@ def generate_flashcards(classroom_id: str, document_ids: str = None, count: int 
         return {"error": f"Saving the flashcards failed: {e}"}
 
     return {"created": len(new_rows)}
+
+
+@app.post("/grade-answer")
+def grade_answer(
+    prompt: str = Body(..., embed=True),
+    reference: str = Body(..., embed=True),
+    answer: str = Body(..., embed=True),
+    level: str = Body(default="normal", embed=True),
+    user_id: str = Depends(verify_user),
+):
+    """AI-grade a free-recall answer against a reference (active recall).
+
+    Returns a verdict the app maps onto SM-2 (incorrect->again, partial->hard,
+    correct->good, excellent->easy) plus one or two warm sentences of feedback.
+    The app degrades to manual self-grading if this ever fails, so it's safe for
+    this to error — but we still guard the parse like the quiz generator.
+    """
+    rate_limit(user_id, "grade-answer", 60, 3600)   # 60/hour — interactive recall
+    answer = (answer or "").strip()
+    if not answer:
+        return {"verdict": "incorrect", "feedback": "No answer given — take a guess next time, even a partial one helps."}
+
+    tone = "Use simple, encouraging language a young learner can follow. " if (level or "").lower() == "kid" else ""
+    grade_prompt = f"""You are grading a student's free-recall answer for a study app. Judge how well the answer matches the REFERENCE in MEANING, not exact wording. Be fair and encouraging. {tone}
+
+PROMPT (what was asked): {prompt}
+REFERENCE ANSWER (the target): {reference}
+STUDENT ANSWER: {answer}
+
+Choose exactly one verdict:
+- "incorrect": missed or wrong.
+- "partial": partially right, key pieces missing.
+- "correct": right in substance.
+- "excellent": right, complete, and well-expressed.
+
+Return ONLY valid JSON: {{ "verdict": "incorrect|partial|correct|excellent", "feedback": "one or two warm sentences: what they got right, then what to fix" }}"""
+
+    try:
+        response, _model = llm.generate(
+            "standard", contents=grade_prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+        data = json.loads((response.text or "").strip())
+        verdict = str(data.get("verdict", "")).lower().strip()
+        if verdict not in ("incorrect", "partial", "correct", "excellent"):
+            raise ValueError("bad verdict")
+        feedback = str(data.get("feedback", "")).strip() or "Reviewed."
+        return {"verdict": verdict, "feedback": feedback}
+    except Exception as e:
+        # Signal the app to fall back to manual self-grading for this card.
+        return {"error": f"grading unavailable: {e}"}
 
 @app.post("/order-from-plan")
 def order_from_plan(classroom_id: str, plan_path: str = None, plan_id: str = None, dry_run: bool = False, match_threshold: float = 0.45, user_id: str = Depends(verify_user)):

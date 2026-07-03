@@ -15,6 +15,7 @@ import ProfileScreen from './components/ProfileScreen';
 import QuizScreen from './components/QuizScreen';
 import LessonPath from './components/LessonPath';
 import FlashcardsScreen from './components/FlashcardsScreen';
+import MatchGame from './components/MatchGame';
 import Onboarding from './components/Onboarding';
 import StreakScreen from './components/StreakScreen';
 import QuestsScreen from './components/QuestsScreen';
@@ -59,6 +60,7 @@ function HomeStack({ session }) {
       <Stack.Screen name="ClassroomDetail" component={ClassroomDetail} options={{ title: '' }} />
       <Stack.Screen name="LessonPath" component={LessonPath} options={{ headerShown: false }} />
       <Stack.Screen name="Flashcards" component={FlashcardsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="MatchGame" component={MatchGame} options={{ headerShown: false }} />
       <Stack.Screen name="Quiz" component={QuizScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Streak" component={StreakScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Quests" component={QuestsScreen} options={{ headerShown: false }} />

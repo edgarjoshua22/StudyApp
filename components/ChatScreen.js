@@ -15,6 +15,14 @@ const AI_MODEL = 'Gemini'; // fallback label until a real answer comes back
 // Rotating placeholder while the tutor works (handouts first, then reasoning).
 const STAGES = ['Thinking…', 'Reading your handouts…', 'Putting it together…'];
 
+// Explainer chips. Each RESTYLES the tutor's last answer (handled server-side by
+// /ask?style=…) rather than asking a new question — so it never re-runs retrieval.
+const EXPLAIN = [
+  { style: 'simple',  chip: '🧒 Simpler',  say: 'Explain that more simply.' },
+  { style: 'analogy', chip: '🔗 Analogy',  say: 'Give me an analogy for that.' },
+  { style: 'example', chip: '📝 Example',  say: 'Show me a worked example.' },
+];
+
 // 'gemini-3-flash' -> 'Gemini 3 Flash'
 function prettyModel(id) {
   if (!id) return AI_MODEL;
@@ -65,10 +73,11 @@ export default function ChatScreen({ session }) {
     return () => { active = false; };
   }, [selected?.id]);
 
-  async function send() {
-    if (!input.trim() || !selected || loading) return;
+  async function send(opts = {}) {
+    const style = opts.style || null;
+    const question = style ? opts.say : input.trim();
+    if ((!style && !input.trim()) || !selected || loading) return;
 
-    const question = input.trim();
     const history = messages
       .filter((m) => m.text && !STAGES.includes(m.text) && !m.text.startsWith('⚠️'))
       .slice(-8)
@@ -79,7 +88,7 @@ export default function ChatScreen({ session }) {
 
     // Show the question + a placeholder reply immediately
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
-    setInput('');
+    if (!style) setInput('');   // keep any typed text only matters for manual sends
     setLoading(true);
 
     // Persist the question immediately so history survives a failed reply or a
@@ -98,7 +107,8 @@ export default function ChatScreen({ session }) {
 
     try {
       // /ask: question + classroom in the URL, recent history in the body.
-      const url = `/ask?question=${encodeURIComponent(question)}&classroom_id=${encodeURIComponent(selected.id)}`;
+      const url = `/ask?question=${encodeURIComponent(question)}&classroom_id=${encodeURIComponent(selected.id)}`
+        + (style ? `&style=${style}` : '');
       const response = await apiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,6 +145,11 @@ export default function ChatScreen({ session }) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }
+
+  // Explainer chips only make sense once the tutor has actually said something.
+  const hasAnswer = messages.some(
+    (m) => m.role === 'ai' && m.text && !STAGES.includes(m.text) && !m.text.startsWith('⚠️')
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -200,6 +215,16 @@ export default function ChatScreen({ session }) {
 
       {/* Input bar */}
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        {/* Explainer chips — restyle the tutor's last answer (only once there is one) */}
+        {hasAnswer && !loading ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {EXPLAIN.map((e) => (
+              <TouchableOpacity key={e.style} style={styles.chip} onPress={() => send({ style: e.style, say: e.say })} activeOpacity={0.8}>
+                <Text style={styles.chipText}>{e.chip}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : null}
         <View style={styles.inputBar}>
           <TextInput
             style={styles.textInput}
@@ -210,7 +235,7 @@ export default function ChatScreen({ session }) {
             editable={!!selected}
             multiline
           />
-          <TouchableOpacity style={[styles.sendButton, !input.trim() && styles.sendDisabled]} onPress={send}>
+          <TouchableOpacity style={[styles.sendButton, !input.trim() && styles.sendDisabled]} onPress={() => send()}>
             <Ionicons name="arrow-up" size={22} color={palette.white} />
           </TouchableOpacity>
         </View>
@@ -274,6 +299,10 @@ const styles = StyleSheet.create({
   sources: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: palette.lineSoft, gap: 3 },
   sourcesLabel: { fontSize: 11, fontWeight: '800', color: palette.inkSoft, letterSpacing: 0.4, marginBottom: 2 },
   sourceLink: { fontSize: 12, fontWeight: '600', color: palette.blue },
+
+  chipRow: { paddingHorizontal: space.md, paddingTop: space.sm, gap: space.sm, flexDirection: 'row' },
+  chip: { backgroundColor: palette.purpleSoft, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
+  chipText: { fontSize: 13, fontWeight: '800', color: palette.purpleDark },
 
   inputBar: { flexDirection: 'row', alignItems: 'flex-end', padding: space.md, gap: space.sm,
     borderTopWidth: 1, borderTopColor: palette.lineSoft, backgroundColor: palette.bg },
