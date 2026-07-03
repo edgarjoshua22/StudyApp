@@ -48,3 +48,8 @@ backend/.env
 .agents/
 .claude/skills/
 skills-lock.json
+.env.local
+
+# python bytecode
+__pycache__/
+*.pyc

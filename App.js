@@ -18,8 +18,22 @@ import StreakScreen from './components/StreakScreen';
 import QuestsScreen from './components/QuestsScreen';
 import SettingsScreen from './components/SettingsScreen';
 import MoreScreen from './components/MoreScreen';
+import * as Sentry from '@sentry/react-native';
 import { configureNotificationHandler } from './lib/reminders';
 import { palette } from './lib/theme';
+
+// Crash/error monitoring. No-op unless EXPO_PUBLIC_SENTRY_DSN is set, so dev
+// builds and anyone without a DSN are unaffected. DSN is safe to ship in a
+// client app (it's write-only). Wrapped so a bad value never blocks startup.
+if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
+  try {
+    Sentry.init({
+      dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+      tracesSampleRate: 0.1,
+      environment: process.env.EXPO_PUBLIC_SENTRY_ENV || 'production',
+    });
+  } catch (_) {}
+}
 
 try { configureNotificationHandler(); } catch (_) {}
 
@@ -156,6 +170,7 @@ class ErrorBoundary extends React.Component {
   static getDerivedStateFromError(error) { return { error }; }
   componentDidCatch(error, info) {
     global.__CRASH_MSG__ = (error?.message || 'unknown') + '\n\n' + (error?.stack || '') + '\n\n' + (info?.componentStack || '');
+    try { Sentry.captureException(error); } catch (_) {}
   }
   render() {
     const runtimeCrash = global.__CRASH_MSG__;
@@ -172,13 +187,17 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-export default function App() {
+function App() {
   return (
     <ErrorBoundary>
       <SafeApp />
     </ErrorBoundary>
   );
 }
+
+// Sentry.wrap adds touch/navigation context to reports; it's a safe pass-through
+// when Sentry isn't initialized (no DSN).
+export default Sentry.wrap(App);
 
 const tabStyles = StyleSheet.create({
   bar: {

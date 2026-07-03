@@ -37,7 +37,8 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "expo-notifications",
-      "expo-calendar"
+      "expo-calendar",
+      "@sentry/react-native/expo"
     ],
     "extra": {
       "eas": {
