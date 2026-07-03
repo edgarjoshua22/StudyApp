@@ -710,20 +710,24 @@ def health():
 
 def _require_classroom_owner(user_id: str, classroom_id: str):
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
-    if not row or row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if not row:
+        raise HTTPException(status_code=404, detail="Classroom not found")
+    if row["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="This classroom belongs to a different account")
 
 
 def _require_document_owner(user_id: str, document_id: str):
     row = supabase.table("documents").select("user_id").eq("id", document_id).maybe_single().execute().data
-    if not row or row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if row["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="This document belongs to a different account")
 
 
 def _require_lesson_owner(user_id: str, lesson_id: str):
     row = supabase.table("lessons").select("classroom_id").eq("id", lesson_id).maybe_single().execute().data
     if not row:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=404, detail="Lesson not found")
     _require_classroom_owner(user_id, row["classroom_id"])
 
 
