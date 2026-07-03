@@ -708,6 +708,20 @@ def health():
         return JSONResponse(status_code=503, content={"status": "error", "db": str(e)})
 
 
+@app.get("/version")
+def version():
+    """Deploy marker so we can verify WHICH commit is actually live.
+
+    Railway injects RAILWAY_GIT_COMMIT_SHA at build time; if this endpoint 404s
+    the running image predates this line, and if the sha is stale the webhook
+    shipped an old commit. Either way it tells us the deploy — not the code — is
+    the problem. `auth_mode` names the verify_user strategy in the live image."""
+    return {
+        "commit": os.environ.get("RAILWAY_GIT_COMMIT_SHA", "unknown"),
+        "auth_mode": "gotrue-direct",
+    }
+
+
 def _require_classroom_owner(user_id: str, classroom_id: str):
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
     if not row:
