@@ -722,6 +722,20 @@ def version():
     }
 
 
+@app.get("/debug-owner")
+def debug_owner(classroom_id: str, user_id: str = Depends(verify_user)):
+    """TEMPORARY. Echoes exactly what _require_classroom_owner compares, as the
+    LIVE image computes it, so we can see why an owner gets 403. Remove after."""
+    row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
+    owner = row.get("user_id") if row else None
+    return {
+        "token_user_id": user_id,
+        "classroom_owner_id": owner,
+        "match": owner == user_id,
+        "supabase_url": os.environ.get("SUPABASE_URL", "unset"),
+    }
+
+
 def _require_classroom_owner(user_id: str, classroom_id: str):
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
     if not row:
