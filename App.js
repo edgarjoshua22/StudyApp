@@ -45,7 +45,7 @@ function HomeStack({ session }) {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: palette.green },
+        headerStyle: { backgroundColor: palette.primary },
         headerTintColor: palette.white,
         headerTitleStyle: { fontWeight: '800' },
         headerShadowVisible: false,
@@ -151,7 +151,7 @@ function SafeApp() {
     return (
       <SafeAreaProvider>
         <Auth />
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
       </SafeAreaProvider>
     );
   }
@@ -161,9 +161,9 @@ function SafeApp() {
     return (
       <SafeAreaProvider>
         <View style={{ flex: 1, backgroundColor: palette.bgSoft, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator color={palette.green} size="large" />
+          <ActivityIndicator color={palette.primary} size="large" />
         </View>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
       </SafeAreaProvider>
     );
   }
@@ -173,7 +173,7 @@ function SafeApp() {
     return (
       <SafeAreaProvider>
         <Onboarding session={session} onDone={() => setOnboarded(true)} />
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
       </SafeAreaProvider>
     );
   }
@@ -190,7 +190,7 @@ function SafeApp() {
           <Tab.Screen name="More">{() => <MoreStack session={session} />}</Tab.Screen>
         </Tab.Navigator>
       </NavigationContainer>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </SafeAreaProvider>
   );
 }
@@ -251,7 +251,7 @@ const tabStyles = StyleSheet.create({
   },
   icon: { width: 34, height: 34 },
   iconBoxActive: {
-    borderColor: '#5ccbf5',
-    backgroundColor: 'rgba(92,203,245,0.14)',
+    borderColor: palette.primary,
+    backgroundColor: palette.primarySoft,
   },
 });
