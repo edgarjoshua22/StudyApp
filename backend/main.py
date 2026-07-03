@@ -8,6 +8,7 @@ from fastapi import FastAPI, BackgroundTasks, Body, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from auth import verify_user
+from ratelimit import enforce as rate_limit
 from google import genai
 from google.genai import types
 from supabase import create_client
@@ -722,6 +723,7 @@ def process_pdf(document_id: str, background_tasks: BackgroundTasks, user_id: st
     'error'.
     """
     _require_document_owner(user_id, document_id)
+    rate_limit(user_id, "process-pdf", 10, 3600)   # 10/hour
     doc = supabase.table("documents").select("id").eq("id", document_id).execute().data
     if not doc:
         return {"error": "Document not found."}
@@ -783,6 +785,7 @@ def _answer_with_web(prompt):
 @app.post("/ask")
 def ask(question: str, classroom_id: str, history: list = Body(default=[], embed=True), user_id: str = Depends(verify_user)):
     _require_classroom_owner(user_id, classroom_id)
+    rate_limit(user_id, "ask", 30, 60)          # 30/min — chat is interactive
     # 1. Retrieve the most relevant handout chunks (the first knowledge base).
     query_embedding = embed_text(question, "RETRIEVAL_QUERY")
     matches = supabase.rpc("match_chunks", {
@@ -884,6 +887,7 @@ def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = Non
     Only one manual quiz exists per classroom: a successful generation replaces it.
     """
     _require_classroom_owner(user_id, classroom_id)
+    rate_limit(user_id, "generate-quiz", 10, 3600)   # 10/hour
     num_questions = max(1, min(num_questions, 15))
     doc_ids = [d.strip() for d in (document_ids or "").split(",") if d.strip()]
 
@@ -1423,6 +1427,7 @@ def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_
     deriving recreates the topic rows.
     """
     _require_classroom_owner(user_id, classroom_id)
+    rate_limit(user_id, "build-path", 5, 3600)       # 5/hour — heavy background job
     owner_id = _owner_of_classroom(classroom_id)
     if not owner_id:
         return {"error": "Classroom not found."}
@@ -1913,6 +1918,7 @@ def build_brain(classroom_id: str, document_id: str = None, force: bool = False,
     brains together is cheap and always re-run, so deletes/additions stay tidy.
     """
     _require_classroom_owner(user_id, classroom_id)
+    rate_limit(user_id, "build-brain", 2, 3600)      # 2/hour — most expensive job
     owner_id = (
         supabase.table("classrooms").select("user_id")
         .eq("id", classroom_id).single().execute().data["user_id"]

@@ -92,17 +92,51 @@ if (os.environ.get("GEMINI_GEN_MODEL") or "").strip() and not _FORCE:
 _COOLDOWN = int(os.environ.get("LLM_COOLDOWN_SECONDS", "600"))          # quota/RPM rest
 _UNAVAILABLE_COOLDOWN = int(os.environ.get("LLM_UNAVAILABLE_COOLDOWN", "3600"))  # paid-only/404 rest
 
-_cooldown_until = {}   # model id -> epoch seconds when it's usable again
+_cooldown_until = {}   # model id -> epoch seconds when it's usable again (fallback)
 _last_used = None      # most recent model that successfully answered
 
 
+def _cool_key(model):
+    return f"llm:cool:{model}"
+
+
 def _is_cooling(model):
+    """True if `model` is resting. Shared via Redis when available so one
+    worker's quota cap cools the model for all workers/replicas."""
+    from cache import get_redis
+    r = get_redis()
+    if r is not None:
+        try:
+            return r.exists(_cool_key(model)) == 1
+        except Exception:  # noqa: BLE001 — fall back to local view
+            pass
     until = _cooldown_until.get(model)
     return until is not None and time.time() < until
 
 
 def _cool(model, seconds):
+    """Rest `model` for `seconds`, in Redis (shared) when available."""
+    from cache import get_redis
+    r = get_redis()
+    if r is not None:
+        try:
+            r.setex(_cool_key(model), seconds, "1")
+            return
+        except Exception:  # noqa: BLE001 — fall back to local
+            pass
     _cooldown_until[model] = time.time() + seconds
+
+
+def _clear_cool(model):
+    """Clear any cooldown on `model` (it just answered successfully)."""
+    from cache import get_redis
+    r = get_redis()
+    if r is not None:
+        try:
+            r.delete(_cool_key(model))
+        except Exception:  # noqa: BLE001
+            pass
+    _cooldown_until.pop(model, None)
 
 
 def _classify(exc):
@@ -152,7 +186,7 @@ def generate(tier, contents, *, config=None, retries_per_model=1):
                     resp = _client.models.generate_content(
                         model=model, contents=contents, config=config,
                     )
-                    _cooldown_until.pop(model, None)   # it works — clear any cooldown
+                    _clear_cool(model)                 # it works — clear any cooldown
                     _last_used = model
                     return resp, model
                 except Exception as e:                 # noqa: BLE001 — classify, don't crash
@@ -179,14 +213,28 @@ def generate(tier, contents, *, config=None, retries_per_model=1):
 def status():
     """Snapshot of routing state for the /models debug endpoint."""
     now = time.time()
+    cooling = {}
+    from cache import get_redis
+    r = get_redis()
+    if r is not None:
+        try:
+            for model in {m for chain in TIERS.values() for m in chain}:
+                ttl = r.ttl(_cool_key(model))
+                if ttl and ttl > 0:
+                    cooling[model] = ttl
+        except Exception:  # noqa: BLE001 — fall through to local view
+            cooling = {}
+    if not cooling:
+        cooling = {
+            m: round(until - now, 1)
+            for m, until in _cooldown_until.items() if until > now
+        }
     return {
         "tiers": TIERS,
         "force_model": _FORCE or None,
         "last_used": _last_used,
-        "cooling_down": {
-            m: round(until - now, 1)
-            for m, until in _cooldown_until.items() if until > now
-        },
+        "redis": r is not None,
+        "cooling_down": cooling,
     }
 
 
