@@ -279,9 +279,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: palette.lineSoft, backgroundColor: palette.bg },
   textInput: { flex: 1, backgroundColor: palette.bgSoft, borderRadius: radius.xl, paddingHorizontal: 16,
     paddingTop: 12, paddingBottom: 12, fontSize: 15, maxHeight: 120, color: palette.ink },
-  sendButton: { width: 46, height: 46, borderRadius: 23, backgroundColor: palette.green,
-    borderBottomWidth: 3, borderBottomColor: palette.greenDark, justifyContent: 'center', alignItems: 'center' },
-  sendDisabled: { backgroundColor: '#c0e8a0', borderBottomColor: '#a9d98a' },
+  sendButton: { width: 46, height: 46, borderRadius: 23, backgroundColor: palette.primary,
+    justifyContent: 'center', alignItems: 'center', ...shadow.card },
+  sendDisabled: { backgroundColor: palette.line },
 
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   sheet: { width: '100%', maxHeight: '60%', backgroundColor: palette.bg, borderRadius: radius.lg, paddingVertical: space.sm },
