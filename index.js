@@ -1,8 +1,10 @@
-import { registerRootComponent } from 'expo';
+// Set up global crash capture BEFORE any imports run (requires CommonJS)
+if (global.ErrorUtils) {
+  global.ErrorUtils.setGlobalHandler((error, isFatal) => {
+    global.__CRASH_MSG__ = (error?.message || 'unknown') + '\n\n' + (error?.stack || '');
+  });
+}
 
-import App from './App';
-
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
+const { registerRootComponent } = require('expo');
+const { default: App } = require('./App');
 registerRootComponent(App);

@@ -4,8 +4,10 @@ import re
 import math
 import json
 from datetime import datetime, timezone
-from fastapi import FastAPI, BackgroundTasks, Body
+from fastapi import FastAPI, BackgroundTasks, Body, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from auth import verify_user
 from google import genai
 from google.genai import types
 from supabase import create_client
@@ -14,11 +16,12 @@ import llm  # task-aware model router (automatic best->cheapest fallback)
 
 app = FastAPI(title="StudyApp Backend")
 
+_cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # --- Connect to Gemini and Supabase ---
@@ -629,6 +632,34 @@ def root():
     return {"message": "StudyApp backend is alive!"}
 
 
+@app.get("/health")
+def health():
+    try:
+        supabase.table("classrooms").select("id").limit(1).execute()
+        return {"status": "ok", "db": "ok"}
+    except Exception as e:
+        return JSONResponse(status_code=503, content={"status": "error", "db": str(e)})
+
+
+def _require_classroom_owner(user_id: str, classroom_id: str):
+    row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
+    if not row or row["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+def _require_document_owner(user_id: str, document_id: str):
+    row = supabase.table("documents").select("user_id").eq("id", document_id).maybe_single().execute().data
+    if not row or row["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+def _require_lesson_owner(user_id: str, lesson_id: str):
+    row = supabase.table("lessons").select("classroom_id").eq("id", lesson_id).maybe_single().execute().data
+    if not row:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    _require_classroom_owner(user_id, row["classroom_id"])
+
+
 def _process_pdf_job(document_id: str):
     """Heavy PDF work run in the background so the upload returns instantly.
 
@@ -682,7 +713,7 @@ def _process_pdf_job(document_id: str):
 
 
 @app.post("/process-pdf")
-def process_pdf(document_id: str, background_tasks: BackgroundTasks):
+def process_pdf(document_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(verify_user)):
     """Kick off PDF processing and return immediately.
 
     Marks the document 'processing', queues the heavy embedding work as a
@@ -690,6 +721,7 @@ def process_pdf(document_id: str, background_tasks: BackgroundTasks):
     The app should poll the documents row's status until it becomes 'ready' or
     'error'.
     """
+    _require_document_owner(user_id, document_id)
     doc = supabase.table("documents").select("id").eq("id", document_id).execute().data
     if not doc:
         return {"error": "Document not found."}
@@ -749,7 +781,8 @@ def _answer_with_web(prompt):
 
 
 @app.post("/ask")
-def ask(question: str, classroom_id: str, history: list = Body(default=[], embed=True)):
+def ask(question: str, classroom_id: str, history: list = Body(default=[], embed=True), user_id: str = Depends(verify_user)):
+    _require_classroom_owner(user_id, classroom_id)
     # 1. Retrieve the most relevant handout chunks (the first knowledge base).
     query_embedding = embed_text(question, "RETRIEVAL_QUERY")
     matches = supabase.rpc("match_chunks", {
@@ -842,7 +875,7 @@ def _delete_manual_quizzes(classroom_id):
 
 
 @app.post("/generate-quiz")
-def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = None, num_questions: int = 8):
+def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = None, num_questions: int = 8, user_id: str = Depends(verify_user)):
     """Generate the classroom's single MANUAL quiz from chosen coverage.
 
     document_ids -> comma-separated handout ids to cover (empty = whole classroom).
@@ -850,6 +883,7 @@ def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = Non
                     the model to focus there.
     Only one manual quiz exists per classroom: a successful generation replaces it.
     """
+    _require_classroom_owner(user_id, classroom_id)
     num_questions = max(1, min(num_questions, 15))
     doc_ids = [d.strip() for d in (document_ids or "").split(",") if d.strip()]
 
@@ -916,7 +950,7 @@ def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = Non
         return {"error": f"Saving the quiz failed: {e}"}
 
 @app.post("/order-from-plan")
-def order_from_plan(classroom_id: str, plan_path: str = None, plan_id: str = None, dry_run: bool = False, match_threshold: float = 0.45):
+def order_from_plan(classroom_id: str, plan_path: str = None, plan_id: str = None, dry_run: bool = False, match_threshold: float = 0.45, user_id: str = Depends(verify_user)):
     """Reorder a classroom's handouts to follow an uploaded lesson plan / syllabus.
 
     The plan is a META-DOCUMENT used ONLY for ordering: it is never chunked,
@@ -940,6 +974,7 @@ def order_from_plan(classroom_id: str, plan_path: str = None, plan_id: str = Non
     run dry_run first to read the best_sim values and tune it.
     Returns the proposed order with per-handout match info so it's auditable.
     """
+    _require_classroom_owner(user_id, classroom_id)
     owner_id = _owner_of_classroom(classroom_id)
     if not owner_id:
         return {"error": "Classroom not found."}
@@ -1090,7 +1125,7 @@ def order_from_plan(classroom_id: str, plan_path: str = None, plan_id: str = Non
 @app.post("/derive-topics")
 def derive_topics(classroom_id: str, plan_id: str = None, source: str = "auto",
                   match_threshold: float = 0.7, top_n_nodes: int = 12, dry_run: bool = False,
-                  merge_threshold: float = 0.86):
+                  merge_threshold: float = 0.86, user_id: str = Depends(verify_user)):
     """Phase 1 of the topic-based path: build the classroom's ordered TOPIC list
     and assign every chunk to its single best-matching topic.
 
@@ -1103,6 +1138,7 @@ def derive_topics(classroom_id: str, plan_id: str = None, source: str = "auto",
     dry_run=True returns the proposed topics + per-topic chunk/handout counts
     WITHOUT writing, so you can inspect and tune match_threshold first.
     """
+    _require_classroom_owner(user_id, classroom_id)
     owner_id = _owner_of_classroom(classroom_id)
     if not owner_id:
         return {"error": "Classroom not found."}
@@ -1363,7 +1399,7 @@ def derive_topics(classroom_id: str, plan_id: str = None, source: str = "auto",
 
 
 @app.post("/build-path")
-def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_lesson: int = 2, max_lessons_per_unit: int = 0, rebuild: bool = False):
+def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_lesson: int = 2, max_lessons_per_unit: int = 0, rebuild: bool = False, user_id: str = Depends(verify_user)):
     """Build the Duolingo-style path with TOPICS as the units (Philosophy B pacing).
 
     Each topic (from /derive-topics, ordered by order_index) becomes a unit of short
@@ -1386,6 +1422,7 @@ def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_
     appends only topics not yet built. After re-running /derive-topics, rebuild -- since
     deriving recreates the topic rows.
     """
+    _require_classroom_owner(user_id, classroom_id)
     owner_id = _owner_of_classroom(classroom_id)
     if not owner_id:
         return {"error": "Classroom not found."}
@@ -1767,9 +1804,10 @@ def _prewarm_lessons(classroom_id: str, after_lesson_id: str = None, count: int 
 
 
 @app.post("/lesson-quiz")
-def lesson_quiz(lesson_id: str, background_tasks: BackgroundTasks):
+def lesson_quiz(lesson_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(verify_user)):
     """Return one lesson node's quiz (generating on first open), then warm the
     NEXT node in the background so the following tile opens instantly."""
+    _require_lesson_owner(user_id, lesson_id)
     payload = _ensure_lesson_quiz(lesson_id)
     if isinstance(payload, dict) and not payload.get("error"):
         rows = supabase.table("lessons").select("classroom_id").eq("id", lesson_id).execute().data
@@ -1779,10 +1817,11 @@ def lesson_quiz(lesson_id: str, background_tasks: BackgroundTasks):
 
 
 @app.post("/prewarm-lessons")
-def prewarm_lessons(classroom_id: str, background_tasks: BackgroundTasks, count: int = 2):
+def prewarm_lessons(classroom_id: str, background_tasks: BackgroundTasks, count: int = 2, user_id: str = Depends(verify_user)):
     """Warm the next `count` uncached tiles for a classroom in the background and
     return immediately. The app calls this when the path screen opens so the
     current (and next) tile are ready before they're tapped."""
+    _require_classroom_owner(user_id, classroom_id)
     background_tasks.add_task(_prewarm_lessons, classroom_id, None, count)
     return {"status": "warming", "count": count}
 
@@ -1866,13 +1905,14 @@ def _ensure_doc_connected(owner_id, doc_id):
     return len(new_edges)
 
 @app.post("/build-brain")
-def build_brain(classroom_id: str, document_id: str = None, force: bool = False):
+def build_brain(classroom_id: str, document_id: str = None, force: bool = False, user_id: str = Depends(verify_user)):
     """Build each handout's concept brain ONCE (thoroughly), then connect them.
 
     Extraction is the expensive part and only runs for handouts not yet built
     (or when force=True, e.g. after a new version). Connecting the handouts'
     brains together is cheap and always re-run, so deletes/additions stay tidy.
     """
+    _require_classroom_owner(user_id, classroom_id)
     owner_id = (
         supabase.table("classrooms").select("user_id")
         .eq("id", classroom_id).single().execute().data["user_id"]
@@ -2023,9 +2063,10 @@ Text:
 
 
 @app.post("/delete-document")
-def delete_document(document_id: str):
+def delete_document(document_id: str, user_id: str = Depends(verify_user)):
     """Remove a handout completely: its file, chunks, and row. Its brain nodes
     cascade away, then we reconnect any concepts left stranded by the gap."""
+    _require_document_owner(user_id, document_id)
     rows = supabase.table("documents").select("storage_path,user_id").eq("id", document_id).execute().data
     if not rows:
         return {"error": "Document not found."}
@@ -2048,8 +2089,9 @@ def delete_document(document_id: str):
 
 
 @app.post("/connect-brain")
-def connect_brain(classroom_id: str):
+def connect_brain(classroom_id: str, user_id: str = Depends(verify_user)):
     """Cheaply re-connect the existing handout brains (no re-extraction)."""
+    _require_classroom_owner(user_id, classroom_id)
     owner_id = (
         supabase.table("classrooms").select("user_id")
         .eq("id", classroom_id).single().execute().data["user_id"]

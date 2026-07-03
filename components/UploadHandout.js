@@ -5,7 +5,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { palette } from '../lib/theme';
 
 export default function UploadHandout({ classroomId }) {
@@ -34,7 +34,8 @@ export default function UploadHandout({ classroomId }) {
       const arrayBuffer = decode(base64);
 
       // 4. Upload to storage, inside the user's own folder
-      const path = `${user.id}/${classroomId}/${Date.now()}_${file.name}`;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${user.id}/${classroomId}/${Date.now()}_${safeName}`;
       const { error: uploadError } = await supabase.storage
         .from('handouts')
         .upload(path, arrayBuffer, { contentType: 'application/pdf' });
@@ -56,7 +57,7 @@ export default function UploadHandout({ classroomId }) {
 
       // 6. Tell the backend to read, chunk, and embed it
       setMessage('Reading and learning your handout...');
-      const response = await fetch(`${API_BASE}/process-pdf?document_id=${doc.id}`, {
+      const response = await apiFetch(`/process-pdf?document_id=${doc.id}`, {
         method: 'POST',
       });
       const data = await response.json();
@@ -65,7 +66,7 @@ export default function UploadHandout({ classroomId }) {
       // 7. Map the new concepts into the second brain (optional — don't fail upload if this errors)
       try {
         setMessage('Mapping concepts to your brain...');
-        await fetch(`${API_BASE}/build-brain?classroom_id=${classroomId}`, { method: 'POST' });
+        await apiFetch(`/build-brain?classroom_id=${classroomId}`, { method: 'POST' });
       } catch (_) { /* brain is secondary; ignore */ }
 
       setStatus('done');

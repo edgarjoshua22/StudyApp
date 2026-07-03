@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { palette, space, radius, shadow } from '../lib/theme';
 
 const AI_MODEL = 'Gemini'; // fallback label until a real answer comes back
@@ -69,8 +69,8 @@ export default function ChatScreen({ session }) {
 
     try {
       // /ask: question + classroom in the URL, recent history in the body.
-      const url = `${API_BASE}/ask?question=${encodeURIComponent(question)}&classroom_id=${encodeURIComponent(selected.id)}`;
-      const response = await fetch(url, {
+      const url = `/ask?question=${encodeURIComponent(question)}&classroom_id=${encodeURIComponent(selected.id)}`;
+      const response = await apiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ history }),

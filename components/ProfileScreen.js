@@ -7,7 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { palette, space, radius, type, shadow, solid } from '../lib/theme';
 
 const COLORS = [
@@ -102,7 +102,7 @@ export default function ProfileScreen({ session, navigation }) {
     setBuilding(true);
     try {
       for (const id of targets) {
-        const res = await fetch(`${API_BASE}/build-brain?classroom_id=${id}`, { method: 'POST' });
+        const res = await apiFetch(`/build-brain?classroom_id=${id}`, { method: 'POST' });
         const data = await res.json();
         if (data.error && targets.length === 1) throw new Error(data.error);
       }

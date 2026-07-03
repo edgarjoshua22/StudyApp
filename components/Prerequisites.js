@@ -5,7 +5,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { palette } from '../lib/theme';
 
 export default function Prerequisites({ classroom }) {
@@ -31,7 +31,7 @@ export default function Prerequisites({ classroom }) {
   const candidates = allClassrooms.filter((c) => c.id !== classroom.id && !prereqIds.has(c.id));
 
   async function reconnect() {
-    try { await fetch(`${API_BASE}/connect-brain?classroom_id=${classroom.id}`, { method: 'POST' }); } catch (_) {}
+    try { await apiFetch(`/connect-brain?classroom_id=${classroom.id}`, { method: 'POST' }); } catch (_) {}
   }
 
   async function addPrereq(prereqClassroomId) {

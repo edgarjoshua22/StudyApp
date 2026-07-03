@@ -9,12 +9,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { palette } from '../lib/theme';
 
 const ACTION_W = 84;
 
 export default function HandoutsList({ classroomId }) {
+  const mountedRef = useRef(true);
+  React.useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [docs, setDocs] = useState([]);
   const [adding, setAdding] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
@@ -54,6 +56,7 @@ export default function HandoutsList({ classroomId }) {
   // Light status-only reads; gives up after ~2 min and returns null.
   async function waitForProcessing(docId, tries = 60, intervalMs = 2000) {
     for (let i = 0; i < tries; i++) {
+      if (!mountedRef.current) return null;
       const { data } = await supabase
         .from('documents').select('status, status_detail')
         .eq('id', docId).single();
@@ -67,15 +70,15 @@ export default function HandoutsList({ classroomId }) {
   // Lets the rest of the app stay usable while embedding runs on the server.
   async function finishWhenReady(docId, force = false) {
     const final = await waitForProcessing(docId);
-    if (!final) return; // timed out -> badge still shows Processing
+    if (!final || !mountedRef.current) return;
     if (final.status === 'error') {
       await fetchDocs();
-      Alert.alert('Processing failed', final.status_detail || 'Could not read this PDF.');
+      if (mountedRef.current) Alert.alert('Processing failed', final.status_detail || 'Could not read this PDF.');
       return;
     }
     try {
-      const url = `${API_BASE}/build-brain?classroom_id=${classroomId}&document_id=${docId}${force ? '&force=true' : ''}`;
-      await fetch(url, { method: 'POST' });
+      const url = `/build-brain?classroom_id=${classroomId}&document_id=${docId}${force ? '&force=true' : ''}`;
+      await apiFetch(url, { method: 'POST' });
     } catch (_) { /* brain is secondary */ }
     await fetchDocs();
   }
@@ -104,7 +107,8 @@ export default function HandoutsList({ classroomId }) {
     if (!user) throw new Error('You are not logged in.');
     const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: 'base64' });
     const arrayBuffer = decode(base64);
-    const path = `${user.id}/${classroomId}/${Date.now()}_${file.name}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${user.id}/${classroomId}/${Date.now()}_${safeName}`;
     const { error } = await supabase.storage.from('handouts').upload(path, arrayBuffer, { contentType: 'application/pdf' });
     if (error) throw error;
     return { user, path };
@@ -129,7 +133,7 @@ export default function HandoutsList({ classroomId }) {
 
       // Kick off processing; the backend returns immediately and works in the
       // background. We show the new row's "Processing…" badge and move on.
-      const res = await fetch(`${API_BASE}/process-pdf?document_id=${doc.id}`, { method: 'POST' });
+      const res = await apiFetch(`/process-pdf?document_id=${doc.id}`, { method: 'POST' });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
@@ -159,7 +163,7 @@ export default function HandoutsList({ classroomId }) {
         .update({ storage_path: path, status: 'pending' }).eq('id', doc.id);
       if (error) throw error;
 
-      const res = await fetch(`${API_BASE}/process-pdf?document_id=${doc.id}`, { method: 'POST' });
+      const res = await apiFetch(`/process-pdf?document_id=${doc.id}`, { method: 'POST' });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
@@ -184,7 +188,7 @@ export default function HandoutsList({ classroomId }) {
           text: 'Delete', style: 'destructive', onPress: async () => {
             setBusyId(doc.id);
             try {
-              const res = await fetch(`${API_BASE}/delete-document?document_id=${doc.id}`, { method: 'POST' });
+              const res = await apiFetch(`/delete-document?document_id=${doc.id}`, { method: 'POST' });
               const data = await res.json();
               if (data.error) throw new Error(data.error);
               await fetchDocs();
@@ -275,7 +279,8 @@ export default function HandoutsList({ classroomId }) {
     const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: 'base64' });
     const arrayBuffer = decode(base64);
     // Kept under the user-id root (passes owner-scoped storage RLS), in a plans/ subfolder
-    const path = `${user.id}/${classroomId}/plans/${Date.now()}_${file.name}`;
+    const safePlanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${user.id}/${classroomId}/plans/${Date.now()}_${safePlanName}`;
     const { error } = await supabase.storage.from('handouts').upload(path, arrayBuffer, { contentType: 'application/pdf' });
     if (error) throw error;
     return { user, path };
@@ -285,7 +290,7 @@ export default function HandoutsList({ classroomId }) {
     const thr = parseFloat(threshold);
     const params = new URLSearchParams({ classroom_id: classroomId, plan_id: planId, dry_run: 'false' });
     if (!isNaN(thr)) params.append('match_threshold', String(thr));
-    const res = await fetch(`${API_BASE}/order-from-plan?${params.toString()}`, { method: 'POST' });
+    const res = await apiFetch(`/order-from-plan?${params.toString()}`, { method: 'POST' });
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); }

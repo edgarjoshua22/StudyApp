@@ -7,7 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import HandoutsList from './HandoutsList';
 import Prerequisites from './Prerequisites';
 import { syncExamReminders, clearExamReminders } from '../lib/reminders';
@@ -307,7 +307,7 @@ export default function ClassroomDetail({ route, navigation }) {
       if (ids.length) params.append('document_ids', ids.join(','));
       if (topics.trim()) params.append('topics', topics.trim());
 
-      const res = await fetch(`${API_BASE}/generate-quiz?${params.toString()}`, { method: 'POST' });
+      const res = await apiFetch(`/generate-quiz?${params.toString()}`, { method: 'POST' });
       const text = await res.text();
       let data;
       try { data = JSON.parse(text); }

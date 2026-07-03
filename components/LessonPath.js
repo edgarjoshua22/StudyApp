@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/api';
 import { palette, radius, subjectEmoji } from '../lib/theme';
 
 // One palette per chapter, cycled. (main = header fill, dark = 3D edge, hex = tile art)
@@ -222,7 +222,7 @@ export default function LessonPath({ route, navigation }) {
 
       // Warm the next couple of tiles in the background so they open instantly.
       if ((lessons || []).length) {
-        fetch(`${API_BASE}/prewarm-lessons?classroom_id=${classroom.id}&count=2`, { method: 'POST' })
+        apiFetch(`/prewarm-lessons?classroom_id=${classroom.id}&count=2`, { method: 'POST' })
           .catch(() => {});
       }
     } catch (e) {
@@ -235,8 +235,8 @@ export default function LessonPath({ route, navigation }) {
   async function postBuild(rebuild) {
     setBuilding(true);
     try {
-      const res = await fetch(
-        `${API_BASE}/build-path?classroom_id=${classroom.id}${rebuild ? '&rebuild=true' : ''}`,
+      const res = await apiFetch(
+        `/build-path?classroom_id=${classroom.id}${rebuild ? '&rebuild=true' : ''}`,
         { method: 'POST' }
       );
       const text = await res.text();
@@ -249,7 +249,7 @@ export default function LessonPath({ route, navigation }) {
     } catch (e) {
       Alert.alert(
         rebuild ? 'Could not rebuild the path' : 'Could not build the path',
-        e.message || "Make sure Docker is running and lib/api.js has your PC's current IPv4."
+        e.message || 'Could not reach the server. Please try again.'
       );
     } finally {
       setBuilding(false);
@@ -272,7 +272,7 @@ export default function LessonPath({ route, navigation }) {
   async function openLesson(lesson) {
     setOpeningId(lesson.id);
     try {
-      const res = await fetch(`${API_BASE}/lesson-quiz?lesson_id=${lesson.id}`, { method: 'POST' });
+      const res = await apiFetch(`/lesson-quiz?lesson_id=${lesson.id}`, { method: 'POST' });
       const text = await res.text();
       let data;
       try { data = JSON.parse(text); }
@@ -283,7 +283,7 @@ export default function LessonPath({ route, navigation }) {
     } catch (e) {
       Alert.alert(
         'Could not start the lesson',
-        e.message || "Make sure Docker is running and lib/api.js has your PC's current IPv4."
+        e.message || 'Could not reach the server. Please try again.'
       );
     } finally {
       setOpeningId(null);

@@ -1,5 +1,6 @@
-fastapi
-uvicorn[standard]
-google-genai
-supabase
-pypdf
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+gunicorn==23.0.0
+google-genai==1.16.0
+supabase==2.15.2
+pypdf==5.5.0

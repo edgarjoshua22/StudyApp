@@ -9,7 +9,13 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "developmentClient": false,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://gzluyywbkwdgpycrhbov.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd6bHV5eXdia3dkZ3B5Y3JoYm92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyMTQzNjYsImV4cCI6MjA5Nzc5MDM2Nn0.TRN9OrjT1sPlOg3cNB6nsBP-t5RFTEyK_YhWvLkpMVA",
+        "EXPO_PUBLIC_API_URL": "https://studyapp-production-9486.up.railway.app"
+      }
     },
     "production": {
       "autoIncrement": true

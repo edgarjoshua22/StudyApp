@@ -21,8 +21,7 @@ import MoreScreen from './components/MoreScreen';
 import { configureNotificationHandler } from './lib/reminders';
 import { palette } from './lib/theme';
 
-// Set how local notifications appear (once, at module load).
-configureNotificationHandler();
+try { configureNotificationHandler(); } catch (_) {}
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -112,7 +111,7 @@ function FunTabBar({ state, navigation }) {
   );
 }
 
-export default function App() {
+function SafeApp() {
   const [session, setSession] = useState(null);
 
   useEffect(() => {
@@ -122,7 +121,12 @@ export default function App() {
   }, []);
 
   if (!session) {
-    return (<><Auth /><StatusBar style="auto" /></>);
+    return (
+      <SafeAreaProvider>
+        <Auth />
+        <StatusBar style="light" />
+      </SafeAreaProvider>
+    );
   }
 
   return (
@@ -139,6 +143,40 @@ export default function App() {
       </NavigationContainer>
       <StatusBar style="light" />
     </SafeAreaProvider>
+  );
+}
+
+// Wrap the whole tree in an error boundary so any render/init crash is visible
+// on-screen instead of leaving a blank gray view. This must be a class component.
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    global.__CRASH_MSG__ = (error?.message || 'unknown') + '\n\n' + (error?.stack || '') + '\n\n' + (info?.componentStack || '');
+  }
+  render() {
+    const runtimeCrash = global.__CRASH_MSG__;
+    const err = this.state.error;
+    if (err || runtimeCrash) {
+      const msg = err ? ((err.message || 'unknown') + '\n\n' + (err.stack || '')) : runtimeCrash;
+      return (
+        <View style={{ flex: 1, backgroundColor: '#000', padding: 24, paddingTop: 60 }}>
+          <Text selectable style={{ color: '#f55', fontSize: 12 }}>APP CRASHED:{'\n\n'}{msg}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <SafeApp />
+    </ErrorBoundary>
   );
 }
 

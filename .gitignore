@@ -43,3 +43,8 @@ yarn-error.*
 .env
 .env
 backend/.env
+
+# local dev tooling (obsidian-skills / agent configs)
+.agents/
+.claude/skills/
+skills-lock.json
