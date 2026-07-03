@@ -10,7 +10,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
-import { palette } from '../lib/theme';
+import { palette, shadow } from '../lib/theme';
 
 const ACTION_W = 84;
 
@@ -714,8 +714,8 @@ const styles = StyleSheet.create({
   notesTitle: { fontSize: 18, fontWeight: 'bold', color: palette.ink, flex: 1, marginRight: 12 },
   notesInput: { minHeight: 200, maxHeight: 360, borderWidth: 2, borderColor: palette.line, borderRadius: 14,
     padding: 14, fontSize: 15, color: palette.ink, lineHeight: 22 },
-  notesSave: { backgroundColor: palette.green, borderBottomWidth: 4, borderBottomColor: palette.greenDark,
-    paddingVertical: 15, borderRadius: 14, alignItems: 'center', marginTop: 16 },
+  notesSave: { backgroundColor: palette.primary,
+    paddingVertical: 15, borderRadius: 14, alignItems: 'center', marginTop: 16, ...shadow.card },
   notesSaveText: { color: palette.white, fontWeight: 'bold', fontSize: 15, letterSpacing: 0.5 },
 
   reorderSheet: { backgroundColor: palette.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24,

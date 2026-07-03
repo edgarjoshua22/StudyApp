@@ -284,7 +284,7 @@ function Chip({ label, active, onPress, dot }) {
 }
 
 // Dependency-free circular progress ring rendered as an inline SVG in a tiny WebView.
-function GoalRing({ size = 84, progress = 0, color = '#58cc02', children }) {
+function GoalRing({ size = 84, progress = 0, color = palette.primary, children }) {
   const p = Math.max(0, Math.min(1, progress));
   const C = 263.9; // circumference for r=42
   const html = `<!doctype html><html><head>

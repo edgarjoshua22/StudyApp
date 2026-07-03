@@ -124,5 +124,5 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   message: { marginTop: 12, textAlign: 'center', color: palette.inkSoft },
   errorText: { color: '#ff4b4b' },
-  doneText: { color: '#58cc02', fontWeight: '600' },
+  doneText: { color: palette.green, fontWeight: '600' },
 });
