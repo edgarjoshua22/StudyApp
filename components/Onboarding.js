@@ -79,8 +79,8 @@ export default function Onboarding({ session, onDone }) {
           <>
             <Text style={styles.title}>Welcome to StudyApp</Text>
             <Text style={styles.sub}>
-              Turn your handouts into a fun, Duolingo-style path — with an AI tutor that learns from your
-              own materials.
+              Turn your handouts into a fun, bite-sized learning path — with an AI tutor that learns from
+              your own materials.
             </Text>
             <View style={styles.legalCard}>
               <Text style={styles.legalText}>

@@ -174,7 +174,7 @@ export default function QuizScreen({ route, navigation }) {
 
       <ScrollView contentContainerStyle={styles.body}>
         <View style={styles.askRow}>
-          <Text style={styles.askOwl}>🦉</Text>
+          <Text style={styles.askMascot}>🦊</Text>
           <View style={styles.askBubble}>
             <Text style={styles.question}>{q.question}</Text>
             <View style={styles.askTail} />
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 },
 
   askRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: space.xxl },
-  askOwl: { fontSize: 44 },
+  askMascot: { fontSize: 44 },
   askBubble: { flex: 1, backgroundColor: palette.bg, borderWidth: 2, borderColor: palette.line,
     borderRadius: radius.lg, padding: space.lg },
   askTail: { position: 'absolute', left: -9, top: 20, width: 14, height: 14, backgroundColor: palette.bg,
