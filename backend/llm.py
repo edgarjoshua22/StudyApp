@@ -229,11 +229,13 @@ def status():
             m: round(until - now, 1)
             for m, until in _cooldown_until.items() if until > now
         }
+    from cache import redis_status
     return {
         "tiers": TIERS,
         "force_model": _FORCE or None,
         "last_used": _last_used,
         "redis": r is not None,
+        "redis_detail": redis_status(),
         "cooling_down": cooling,
     }
 
