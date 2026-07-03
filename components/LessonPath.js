@@ -221,9 +221,12 @@ export default function LessonPath({ route, navigation }) {
       offsetsRef.current = {};
 
       // Warm the next couple of tiles in the background so they open instantly.
+      // Non-fatal: if it fails, the tile just generates on-demand when tapped
+      // (openLesson handles that path and surfaces its own errors). We log rather
+      // than swallow so a consistently-failing prewarm is visible, not invisible.
       if ((lessons || []).length) {
         apiFetch(`/prewarm-lessons?classroom_id=${classroom.id}&count=2`, { method: 'POST' })
-          .catch(() => {});
+          .catch((e) => console.warn('prewarm-lessons failed (non-fatal):', e?.message || e));
       }
     } catch (e) {
       Alert.alert('Could not load your path', e.message || String(e));

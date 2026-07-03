@@ -36,24 +36,23 @@ export default function QuizScreen({ route, navigation }) {
         score,
         total: questions.length,
       });
-      // award_xp handles the daily reset + streak math atomically in the DB
-      const { data, error } = await supabase.rpc('award_xp', { amount: xpEarned });
+      // Award XP (+ mark the path node complete, if this came from a lesson).
+      // For a path lesson we use one atomic RPC so completion and XP either both
+      // land or neither does — no more "lesson done but no XP" drift. Both paths
+      // return the same award shape (awarded / streak / daily_xp / daily_goal).
+      const { data, error } = lesson?.id
+        ? await supabase.rpc('complete_lesson_and_award_xp', {
+            p_lesson_id: lesson.id,
+            p_score: score,
+            p_total: questions.length,
+            p_amount: xpEarned,
+          })
+        : await supabase.rpc('award_xp', { amount: xpEarned });
       if (error) {
-        console.warn('award_xp failed:', error);
+        console.warn('award/completion failed:', error);
         setAwardErr(error.message || 'Unknown error');
       } else if (data) {
         setAward(data);
-      }
-
-      // If this quiz was launched from a learning-path node, mark it complete
-      // (atomic upsert in the DB: keeps earliest completion, raises best score).
-      if (lesson?.id) {
-        const { error: lessonErr } = await supabase.rpc('complete_lesson', {
-          p_lesson_id: lesson.id,
-          p_score: score,
-          p_total: questions.length,
-        });
-        if (lessonErr) console.warn('complete_lesson failed:', lessonErr);
       }
     })();
   }, [finished]);

@@ -3,6 +3,9 @@ import io
 import re
 import math
 import json
+import time
+import uuid
+import logging
 from datetime import datetime, timezone
 from fastapi import FastAPI, BackgroundTasks, Body, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +18,47 @@ from supabase import create_client
 from pypdf import PdfReader
 import llm  # task-aware model router (automatic best->cheapest fallback)
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+_log = logging.getLogger("studyapp")
+
+# Error monitoring — only active when SENTRY_DSN is set, so local/dev is a no-op.
+_SENTRY_DSN = (os.environ.get("SENTRY_DSN") or "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            environment=os.environ.get("SENTRY_ENV", "production"),
+        )
+        _log.info("[sentry] error monitoring enabled.")
+    except Exception as e:  # noqa: BLE001 — monitoring must never block boot
+        _log.warning("[sentry] init failed (%s); continuing without it.", e)
+
 app = FastAPI(title="StudyApp Backend")
+
+
+@app.middleware("http")
+async def _request_logger(request, call_next):
+    """Structured access log with a short request id + latency on every call.
+    The id is echoed back as X-Request-ID so a user-reported error can be traced
+    to its log line (and Sentry event)."""
+    rid = uuid.uuid4().hex[:8]
+    start = time.time()
+    try:
+        response = await call_next(request)
+    except Exception:
+        _log.exception("rid=%s %s %s -> UNHANDLED (%.0fms)",
+                       rid, request.method, request.url.path, (time.time() - start) * 1000)
+        raise
+    _log.info("rid=%s %s %s -> %s (%.0fms)",
+              rid, request.method, request.url.path, response.status_code,
+              (time.time() - start) * 1000)
+    response.headers["X-Request-ID"] = rid
+    return response
 
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
