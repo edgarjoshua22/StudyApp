@@ -6,8 +6,11 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../lib/supabase';
-import { palette, unitColor, subjectEmoji, space, radius, type, shadow, solid } from '../lib/theme';
+import { palette, gradients, unitColor, subjectEmoji, space, radius, type, shadow, solid } from '../lib/theme';
+import { GradientButton } from './ui';
+import { words } from '../lib/copy';
 
 const SEMESTERS = ['1st Semester', '2nd Semester', 'Mid Year'];
 const CURRENT_YEAR = new Date().getFullYear();
@@ -79,6 +82,7 @@ export default function ClassroomsScreen({ navigation, session }) {
   const [showForm, setShowForm] = useState(false);
 
   const isPathfinder = profile?.user_type === 'pathfinder';
+  const w = words(profile?.user_type);
 
   useFocusEffect(useCallback(() => { fetchClassrooms(); fetchProfile(); }, []));
 
@@ -131,17 +135,17 @@ export default function ClassroomsScreen({ navigation, session }) {
   const todayXp = profile?.daily_xp_date === localToday() ? (profile?.daily_xp || 0) : 0;
 
   const Hero = (
-    <View style={styles.hero}>
-      <Text style={styles.heroMascot}>🧠</Text>
+    <LinearGradient colors={gradients.grape} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+      <Text style={styles.heroMascot}>🦊</Text>
       <Text style={styles.heroOverline}>{greetingWord().toUpperCase()}</Text>
-      <Text style={styles.heroName}>{nameFromEmail(session.user.email)} 👋</Text>
-      <Text style={styles.heroSub}>Ready to build your brain today?</Text>
+      <Text style={styles.heroName}>{profile?.full_name || nameFromEmail(session.user.email)} 👋</Text>
+      <Text style={styles.heroSub}>{w.heroSub}</Text>
       <View style={styles.chipRow}>
-        <StatChip icon="🔥" value={streak} label={streak === 1 ? 'day streak' : 'day streak'} />
+        <StatChip icon="🔥" value={streak} label="day streak" />
         <StatChip icon="⚡" value={xp} label="total XP" />
         <StatChip icon="🎯" value={goal ? `${todayXp}/${goal}` : todayXp} label="today" />
       </View>
-    </View>
+    </LinearGradient>
   );
 
   return (
@@ -176,16 +180,17 @@ export default function ClassroomsScreen({ navigation, session }) {
                       onSelect={setStartYear} />
                   </>
                 )}
-                {loading ? <ActivityIndicator style={{ marginVertical: 12 }} color={palette.green} /> : (
-                  <TouchableOpacity style={styles.saveButton} onPress={addClassroom} activeOpacity={0.85}>
-                    <Text style={styles.saveButtonText}>SAVE SUBJECT</Text>
-                  </TouchableOpacity>
-                )}
+                <GradientButton
+                  title={isPathfinder ? 'Save Topic' : 'Save Subject'}
+                  onPress={addClassroom}
+                  loading={loading}
+                  style={{ marginTop: space.xs }}
+                />
               </View>
             ) : null}
             {classrooms.length > 0 ? (
               <Text style={styles.sectionLabel}>
-                YOUR SUBJECTS · {classrooms.length}
+                YOUR {w.Units.toUpperCase()} · {classrooms.length}
               </Text>
             ) : null}
           </View>
@@ -193,8 +198,8 @@ export default function ClassroomsScreen({ navigation, session }) {
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>📚</Text>
-            <Text style={styles.emptyText}>No subjects yet</Text>
-            <Text style={styles.emptySub}>Tap the + button to add your first one and start a learning path!</Text>
+            <Text style={styles.emptyText}>No {w.units} yet</Text>
+            <Text style={styles.emptySub}>{w.addFirst}</Text>
           </View>
         }
         renderItem={({ item, index }) => {
@@ -228,9 +233,7 @@ const styles = StyleSheet.create({
 
   // Hero
   hero: {
-    backgroundColor: palette.green, borderRadius: radius.xl, padding: space.xl,
-    borderBottomWidth: 5, borderBottomColor: palette.greenDark, marginBottom: space.xl,
-    overflow: 'hidden',
+    borderRadius: radius.xl, padding: space.xl, marginBottom: space.xl, overflow: 'hidden',
   },
   heroMascot: { position: 'absolute', right: 14, top: 6, fontSize: 64, opacity: 0.28 },
   heroOverline: { color: '#eaffd6', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
@@ -287,7 +290,7 @@ const styles = StyleSheet.create({
   // FAB
   fab: {
     position: 'absolute', right: 24, bottom: 24, width: 64, height: 64, borderRadius: 32,
-    backgroundColor: palette.green, borderBottomWidth: 4, borderBottomColor: palette.greenDark,
+    backgroundColor: palette.primary,
     justifyContent: 'center', alignItems: 'center', ...shadow.lift,
   },
 

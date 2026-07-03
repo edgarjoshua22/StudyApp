@@ -5,13 +5,14 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
 import HandoutsList from './HandoutsList';
 import Prerequisites from './Prerequisites';
 import { syncExamReminders, clearExamReminders } from '../lib/reminders';
-import { palette, unitColors, subjectEmoji, space, radius, type, shadow, solid } from '../lib/theme';
+import { palette, gradients, unitColors, subjectEmoji, space, radius, type, shadow, solid } from '../lib/theme';
 
 const QUESTION_OPTIONS = [5, 8, 10, 15];
 
@@ -374,10 +375,10 @@ export default function ClassroomDetail({ route, navigation }) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: space.xl, paddingBottom: 48 }}>
       {/* ---------- Subject hero ---------- */}
-      <View style={[styles.hero, solid(accent.main, accent.dark, radius.xl)]}>
+      <LinearGradient colors={accent.grad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.hero, { borderRadius: radius.xl }]}>
         <Text style={styles.heroEmoji}>{subjectEmoji(classroom.name)}</Text>
         <Text style={styles.heroName}>{classroom.name}</Text>
-        <Text style={styles.heroSem}>{classroom.semester}</Text>
+        {classroom.semester ? <Text style={styles.heroSem}>{classroom.semester}</Text> : null}
         {nextExam ? (
           <View style={styles.heroPill}>
             <Text style={styles.heroPillText}>
@@ -385,20 +386,21 @@ export default function ClassroomDetail({ route, navigation }) {
             </Text>
           </View>
         ) : null}
-      </View>
+      </LinearGradient>
 
       {/* ---------- Learning Path — the star CTA ---------- */}
       <TouchableOpacity
-        style={[styles.pathBtn, solid(palette.green, palette.greenDark, radius.lg)]}
         activeOpacity={0.85}
         onPress={() => navigation.navigate('LessonPath', { classroom })}
       >
-        <Text style={styles.pathEmoji}>🗺️</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.pathBtnText}>Learning Path</Text>
-          <Text style={styles.pathBtnSub}>Your daily study route</Text>
-        </View>
-        <Ionicons name="chevron-forward" size={22} color={palette.white} />
+        <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.pathBtn, { borderRadius: radius.lg }]}>
+          <Text style={styles.pathEmoji}>🗺️</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pathBtnText}>Learning Path</Text>
+            <Text style={styles.pathBtnSub}>Your study route</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color={palette.white} />
+        </LinearGradient>
       </TouchableOpacity>
 
       {/* ---------- Exams ---------- */}
