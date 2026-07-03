@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -14,6 +14,7 @@ import ChatScreen from './components/ChatScreen';
 import ProfileScreen from './components/ProfileScreen';
 import QuizScreen from './components/QuizScreen';
 import LessonPath from './components/LessonPath';
+import Onboarding from './components/Onboarding';
 import StreakScreen from './components/StreakScreen';
 import QuestsScreen from './components/QuestsScreen';
 import SettingsScreen from './components/SettingsScreen';
@@ -127,6 +128,8 @@ function FunTabBar({ state, navigation }) {
 
 function SafeApp() {
   const [session, setSession] = useState(null);
+  // null = still checking the profile; true/false = onboarding done or not.
+  const [onboarded, setOnboarded] = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -134,10 +137,42 @@ function SafeApp() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // Whenever we have a session, check whether onboarding is complete.
+  useEffect(() => {
+    let active = true;
+    if (!session) { setOnboarded(null); return; }
+    supabase.from('profiles').select('onboarding_completed')
+      .eq('id', session.user.id).maybeSingle()
+      .then(({ data }) => { if (active) setOnboarded(!!data?.onboarding_completed); });
+    return () => { active = false; };
+  }, [session]);
+
   if (!session) {
     return (
       <SafeAreaProvider>
         <Auth />
+        <StatusBar style="light" />
+      </SafeAreaProvider>
+    );
+  }
+
+  // Signed in but still resolving profile state — brief loader.
+  if (onboarded === null) {
+    return (
+      <SafeAreaProvider>
+        <View style={{ flex: 1, backgroundColor: palette.bgSoft, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator color={palette.green} size="large" />
+        </View>
+        <StatusBar style="light" />
+      </SafeAreaProvider>
+    );
+  }
+
+  // First launch: run onboarding before the app proper.
+  if (!onboarded) {
+    return (
+      <SafeAreaProvider>
+        <Onboarding session={session} onDone={() => setOnboarded(true)} />
         <StatusBar style="light" />
       </SafeAreaProvider>
     );

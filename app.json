@@ -2,6 +2,7 @@
   "expo": {
     "name": "StudyApp",
     "slug": "StudyApp",
+    "scheme": "studyapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -38,7 +39,8 @@
       "@react-native-community/datetimepicker",
       "expo-notifications",
       "expo-calendar",
-      "@sentry/react-native/expo"
+      "@sentry/react-native/expo",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

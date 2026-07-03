@@ -247,14 +247,36 @@ def _filename_ordinal(name: str) -> int:
     return int(m.group()) if m else 10 ** 9
 
 
-def _topics_from_plan(plan_text: str):
+def _classroom_context(classroom_id: str) -> str:
+    """A short 'what this course is about + the learner's goal' preface used to
+    steer topic / concept-brain generation toward what matters (and where the
+    knowledge gaps are). Empty when the classroom set neither."""
+    try:
+        row = supabase.table("classrooms").select("name,description,goal").eq(
+            "id", classroom_id).maybe_single().execute().data or {}
+    except Exception:
+        return ""
+    bits = []
+    if (row.get("name") or "").strip():
+        bits.append(f"Course: {row['name'].strip()}")
+    if (row.get("description") or "").strip():
+        bits.append(f"What it's about: {row['description'].strip()}")
+    if (row.get("goal") or "").strip():
+        bits.append(f"Learner's goal: {row['goal'].strip()}")
+    if not bits:
+        return ""
+    return ("CONTEXT FOR THIS COURSE (use it to judge what matters and where the "
+            "knowledge gaps are):\n" + "\n".join(bits) + "\n\n")
+
+
+def _topics_from_plan(plan_text: str, context: str = ""):
     """Ask Gemini for the ordered topics a lesson plan / syllabus teaches.
 
     Returns (topics, error). On success error is None; topics are short phrases
     in teaching order. The plan is read ONLY for this -- it never gets embedded
     into RAG, brain-built, or quizzed.
     """
-    prompt = f"""You are reading a course lesson plan / syllabus. Extract the list of TOPICS the course teaches, in the ORDER they are taught (top to bottom, week 1 first).
+    prompt = f"""{context}You are reading a course lesson plan / syllabus. Extract the list of TOPICS the course teaches, in the ORDER they are taught (top to bottom, week 1 first).
 
 Rules:
 - Each topic is a short phrase (2-8 words): the subject matter, not admin text.
@@ -319,7 +341,8 @@ def _topics_from_brain(classroom_id: str, top_n: int = 12):
     concept_lines = "\n".join(
         f"- {n['label']}: {(n.get('summary') or '').strip()}" for n in ranked
     )
-    prompt = f"""These are the most connected concepts pulled from a student's course notes, with short summaries:
+    ctx = _classroom_context(classroom_id)
+    prompt = f"""{ctx}These are the most connected concepts pulled from a student's course notes, with short summaries:
 
 {concept_lines}
 
@@ -829,20 +852,28 @@ def _answer_with_web(prompt):
 def ask(question: str, classroom_id: str, history: list = Body(default=[], embed=True), user_id: str = Depends(verify_user)):
     _require_classroom_owner(user_id, classroom_id)
     rate_limit(user_id, "ask", 30, 60)          # 30/min — chat is interactive
-    # 1. Retrieve the most relevant handout chunks (the first knowledge base).
+    # 1. Retrieve the most relevant handout chunks (the PRIMARY knowledge base).
     query_embedding = embed_text(question, "RETRIEVAL_QUERY")
     matches = supabase.rpc("match_chunks", {
         "query_embedding": query_embedding,
         "match_classroom_id": classroom_id,
         "match_count": 6,
+        "match_threshold": 0,
     }).execute().data or []
+
+    # Do the handouts actually cover this question? Judge by the best chunk's
+    # cosine similarity. Above STRONG we answer from the materials only (no web);
+    # below it we let the model look things up. Handouts first, web as fallback.
+    STRONG = 0.72
+    top_sim = max((m.get("similarity") or 0) for m in matches) if matches else 0
+    covered = top_sim >= STRONG
 
     if matches:
         context = "\n\n---\n\n".join(
             f"[Material {i + 1}]\n{m['content']}" for i, m in enumerate(matches)
         )
     else:
-        context = "(No course materials matched this question.)"
+        context = "(No course materials found for this classroom.)"
 
     # 2. Recent conversation so follow-ups ("why?", "another example") make sense.
     hist = ""
@@ -859,17 +890,16 @@ def ask(question: str, classroom_id: str, history: list = Body(default=[], embed
         if lines:
             hist = "CONVERSATION SO FAR:\n" + "\n".join(lines) + "\n\n"
 
-    # 3. Materials-first, but not materials-only: knowledge + web fill the gaps.
-    prompt = f"""You are StudyBuddy, a sharp and friendly study tutor. Answer the student's question clearly and get straight to the point.
+    # 3. One warm, well-formatted prompt; the delivery path differs by coverage.
+    prompt = f"""You are StudyBuddy, a warm and encouraging study tutor. Your goal is for the student to genuinely understand — be friendly, clear, and easy to follow.
 
 How to answer:
-- Treat the COURSE MATERIALS below as your first and most trusted source. If they cover the question, build your answer on them and pull together the relevant points across the different materials.
-- They are your first source, not your only one. If they don't fully cover it (or there are none), use your own expert knowledge, and search the web when current or outside facts would make the answer better or more accurate.
-- Always put it in your own words — never copy-paste chunks of the materials back at the student.
-- If you're explaining something, make it genuinely easy to understand: plain language, build up from the basics, and add a short concrete example or analogy when it helps.
-- Be warm and encouraging, but skip the fluff. Don't restate the question. Keep it tight: a few short paragraphs or clean bullet points.
+- The COURSE MATERIALS below are your PRIMARY source. When they cover the question, build your answer on them and connect the relevant points.
+- Explain like a patient friend: plain language, start simple, then add detail. Add a short concrete example or analogy when it helps something click.
+- Format for easy reading: a couple of short paragraphs, or clean bullet points for lists and steps. **Bold** a key term when it aids scanning. Keep it tight — no rambling, and don't restate the question.
+- Always use your own words; never paste chunks of the materials back.
+- If the materials don't fully cover it, use your own expert knowledge (and current facts) to fill the gap, and briefly note when you're going beyond their materials.
 - Use the conversation so far to understand short follow-ups (like "why?" or "give another example").
-- If the materials and outside facts disagree, briefly flag it.
 
 COURSE MATERIALS:
 {context}
@@ -877,23 +907,31 @@ COURSE MATERIALS:
 {hist}STUDENT QUESTION: {question}"""
 
     answer, used_model, web_sources = None, None, []
+    over_limit = {
+        "answer": "Your study buddy is over today's limit on every available model. "
+                  "Please try again in a little while.",
+        "model": None, "sources": [], "web_sources": [],
+    }
 
-    # 3. Try a web-grounded answer first (the model only actually searches when it
-    #    needs to). Fall back to the tiered router with no tool if grounding isn't
-    #    available on this key/tier.
-    grounded = _answer_with_web(prompt)
-    if grounded:
-        answer, used_model, web_sources = grounded
-    else:
+    if covered:
+        # Handouts cover it: answer straight from the materials (no web search).
         try:
             response, used_model = llm.generate("standard", contents=prompt)
             answer = response.text
         except Exception:
-            return {
-                "answer": "Your study buddy is over today's limit on every available model. "
-                          "Please try again in a little while.",
-                "model": None, "sources": [], "web_sources": [],
-            }
+            return over_limit
+    else:
+        # Not well covered: allow a web-grounded answer, falling back to the
+        # tiered router with no tool if grounding isn't available on this key.
+        grounded = _answer_with_web(prompt)
+        if grounded:
+            answer, used_model, web_sources = grounded
+        else:
+            try:
+                response, used_model = llm.generate("standard", contents=prompt)
+                answer = response.text
+            except Exception:
+                return over_limit
 
     return {
         "answer": answer,
@@ -1045,7 +1083,7 @@ def order_from_plan(classroom_id: str, plan_path: str = None, plan_id: str = Non
         return {"error": plan_err or "No text found in the lesson plan (it may be a scanned image)."}
 
     # 2. Ordered topics from Gemini
-    topics, err = _topics_from_plan(plan_text)
+    topics, err = _topics_from_plan(plan_text, _classroom_context(classroom_id))
     if err:
         return {"error": err}
     if not topics:
@@ -1219,7 +1257,7 @@ def derive_topics(classroom_id: str, plan_id: str = None, source: str = "auto",
         plan_text = plan_text.strip()
         if not plan_text:
             return {"error": plan_err or "No text found in the lesson plan."}
-        topic_names, err = _topics_from_plan(plan_text)
+        topic_names, err = _topics_from_plan(plan_text, _classroom_context(classroom_id))
         if err:
             return {"error": err}
     elif chosen == "brain":
@@ -2011,8 +2049,9 @@ def build_brain(classroom_id: str, document_id: str = None, force: bool = False,
 
         concept_summary = {}   # label_key -> (label, summary)
         all_links = []
+        brain_ctx = _classroom_context(classroom_id)
         for btext in batches:
-            prompt = f"""You are building a concept map (a "second brain") from part of a student's handout.
+            prompt = f"""{brain_ctx}You are building a concept map (a "second brain") from part of a student's handout.
 Extract the concepts and how they connect, so the student can find information fast instead of re-reading the PDF.
 
 Rules:

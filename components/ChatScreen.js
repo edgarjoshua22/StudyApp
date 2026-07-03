@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet,
   Modal, ScrollView, KeyboardAvoidingView, Platform, Linking,
@@ -12,8 +12,8 @@ import { palette, space, radius, shadow } from '../lib/theme';
 
 const AI_MODEL = 'Gemini'; // fallback label until a real answer comes back
 
-// Rotating placeholder while the tutor works (implies the web step on longer waits).
-const STAGES = ['Thinking…', 'Searching the web…', 'Putting it together…'];
+// Rotating placeholder while the tutor works (handouts first, then reasoning).
+const STAGES = ['Thinking…', 'Reading your handouts…', 'Putting it together…'];
 
 // 'gemini-3-flash' -> 'Gemini 3 Flash'
 function prettyModel(id) {
@@ -42,6 +42,29 @@ export default function ChatScreen({ session }) {
       });
   }, []));
 
+  // Load this classroom's own saved chat history whenever the selection changes.
+  // This gives each classroom a dedicated, persistent thread.
+  useEffect(() => {
+    let active = true;
+    if (!selected) { setMessages([]); return; }
+    supabase.from('chat_messages')
+      .select('id,role,text,model,web_sources,created_at')
+      .eq('classroom_id', selected.id)
+      .order('created_at', { ascending: true })
+      .then(({ data }) => {
+        if (!active) return;
+        setMessages((data || []).map((r) => ({
+          id: r.id,
+          role: r.role,
+          text: r.text,
+          model: r.model,
+          web: Array.isArray(r.web_sources) ? r.web_sources : [],
+        })));
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 120);
+      });
+    return () => { active = false; };
+  }, [selected?.id]);
+
   async function send() {
     if (!input.trim() || !selected || loading) return;
 
@@ -58,6 +81,12 @@ export default function ChatScreen({ session }) {
     setMessages((prev) => [...prev, userMsg, thinkingMsg]);
     setInput('');
     setLoading(true);
+
+    // Persist the question immediately so history survives a failed reply or a
+    // closed app.
+    supabase.from('chat_messages').insert({
+      user_id: session.user.id, classroom_id: selected.id, role: 'user', text: question,
+    }).then(() => {});
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
 
     // Staged placeholder: Thinking… -> Searching the web… -> Putting it together…
@@ -78,6 +107,13 @@ export default function ChatScreen({ session }) {
       const data = await response.json();
       const answer = data.answer || 'Sorry, I could not find an answer.';
       if (data.model) setLastModel(data.model);
+
+      // Save the tutor's reply to this classroom's history.
+      supabase.from('chat_messages').insert({
+        user_id: session.user.id, classroom_id: selected.id, role: 'ai',
+        text: answer, model: data.model || null,
+        web_sources: Array.isArray(data.web_sources) ? data.web_sources : null,
+      }).then(() => {});
 
       // Replace the "Thinking…" bubble with the real answer (+ any web sources)
       setMessages((prev) =>

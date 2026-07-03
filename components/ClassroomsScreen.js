@@ -69,12 +69,16 @@ function StatChip({ icon, value, label }) {
 
 export default function ClassroomsScreen({ navigation, session }) {
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [goal, setGoal] = useState('');
   const [semester, setSemester] = useState('');
   const [startYear, setStartYear] = useState(null);
   const [classrooms, setClassrooms] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+
+  const isPathfinder = profile?.user_type === 'pathfinder';
 
   useFocusEffect(useCallback(() => { fetchClassrooms(); fetchProfile(); }, []));
 
@@ -88,23 +92,36 @@ export default function ClassroomsScreen({ navigation, session }) {
   async function fetchProfile() {
     const { data } = await supabase
       .from('profiles')
-      .select('xp,daily_xp,daily_xp_date,daily_goal,current_streak')
+      .select('xp,daily_xp,daily_xp_date,daily_goal,current_streak,user_type')
       .eq('id', session.user.id).maybeSingle();
     setProfile(data || null);
   }
 
   async function addClassroom() {
-    if (!name.trim() || !semester || !startYear) {
-      Alert.alert('Missing info', 'Please enter a subject, semester, and academic year.');
+    if (!name.trim()) {
+      Alert.alert('Missing info', 'Please enter a subject name.');
       return;
     }
-    const fullSemester = `${semester}, AY ${startYear}-${startYear + 1}`;
+    if (!isPathfinder && (!semester || !startYear)) {
+      Alert.alert('Missing info', 'Please choose a semester and academic year.');
+      return;
+    }
+    const fullSemester = (!isPathfinder && semester && startYear)
+      ? `${semester}, AY ${startYear}-${startYear + 1}`
+      : null;
     setLoading(true);
     const { error } = await supabase.from('classrooms').insert({
-      name: name.trim(), semester: fullSemester, user_id: session.user.id,
+      name: name.trim(),
+      semester: fullSemester,
+      description: description.trim() || null,
+      goal: goal.trim() || null,
+      user_id: session.user.id,
     });
     if (error) Alert.alert('Could not save', error.message);
-    else { setName(''); setSemester(''); setStartYear(null); setShowForm(false); fetchClassrooms(); }
+    else {
+      setName(''); setDescription(''); setGoal(''); setSemester(''); setStartYear(null);
+      setShowForm(false); fetchClassrooms();
+    }
     setLoading(false);
   }
 
@@ -138,16 +155,27 @@ export default function ClassroomsScreen({ navigation, session }) {
             {Hero}
             {showForm ? (
               <View style={styles.form}>
-                <Text style={styles.formTitle}>New subject</Text>
+                <Text style={styles.formTitle}>New {isPathfinder ? 'topic' : 'subject'}</Text>
                 <TextInput style={[styles.input, styles.inputText]}
-                  placeholder="Subject name (e.g. Calculus)" placeholderTextColor={palette.hint}
+                  placeholder={isPathfinder ? 'Topic name (e.g. Astrophysics)' : 'Subject name (e.g. Calculus)'}
+                  placeholderTextColor={palette.hint}
                   value={name} onChangeText={setName} />
-                <Dropdown placeholder="Select semester" value={semester}
-                  options={SEMESTERS.map((s) => ({ label: s, value: s }))} onSelect={setSemester} />
-                <Dropdown placeholder="Select academic year"
-                  value={startYear ? `AY ${startYear}-${startYear + 1}` : ''}
-                  options={START_YEARS.map((y) => ({ label: `${y}-${y + 1}`, value: y }))}
-                  onSelect={setStartYear} />
+                <TextInput style={styles.textArea}
+                  placeholder="What's this about? (topics & scope)" placeholderTextColor={palette.hint}
+                  value={description} onChangeText={setDescription} multiline />
+                <TextInput style={styles.textArea}
+                  placeholder="Your goal — e.g. ace the finals, build intuition" placeholderTextColor={palette.hint}
+                  value={goal} onChangeText={setGoal} multiline />
+                {!isPathfinder && (
+                  <>
+                    <Dropdown placeholder="Select semester" value={semester}
+                      options={SEMESTERS.map((s) => ({ label: s, value: s }))} onSelect={setSemester} />
+                    <Dropdown placeholder="Select academic year"
+                      value={startYear ? `AY ${startYear}-${startYear + 1}` : ''}
+                      options={START_YEARS.map((y) => ({ label: `${y}-${y + 1}`, value: y }))}
+                      onSelect={setStartYear} />
+                  </>
+                )}
                 {loading ? <ActivityIndicator style={{ marginVertical: 12 }} color={palette.green} /> : (
                   <TouchableOpacity style={styles.saveButton} onPress={addClassroom} activeOpacity={0.85}>
                     <Text style={styles.saveButtonText}>SAVE SUBJECT</Text>
@@ -228,6 +256,11 @@ const styles = StyleSheet.create({
   },
   inputText: { fontSize: 16, color: palette.ink, flex: 1 },
   placeholderText: { fontSize: 16, color: palette.hint, flex: 1 },
+  textArea: {
+    borderWidth: 2, borderColor: palette.line, borderRadius: radius.md,
+    paddingHorizontal: space.lg, paddingVertical: 14, minHeight: 76, marginBottom: space.md,
+    backgroundColor: palette.bg, color: palette.ink, fontSize: 16, textAlignVertical: 'top',
+  },
   saveButton: { ...solid(palette.green, palette.greenDark, radius.md), paddingVertical: 16, marginTop: space.xs },
   saveButtonText: { color: palette.white, fontSize: 16, fontWeight: '800', textAlign: 'center', letterSpacing: 0.5 },
 
