@@ -555,6 +555,64 @@ Course material:
     return clean, None
 
 
+def _flashcards_from_text(source_text: str, count: int):
+    """Ask Gemini for front/back flashcards grounded ONLY in the material.
+
+    Returns (clean_cards, error). Each card is {"front","back"}: front is a
+    short prompt/question, back is a concise answer. Fronts are deduped so a
+    deck built from overlapping chunks doesn't repeat itself.
+    """
+    count = max(1, min(count, 20))
+    prompt = f"""You are making study flashcards for a spaced-repetition app. Using ONLY the course material below, write {count} flashcards that test the most important facts, definitions, and relationships.
+
+Rules:
+- "front" is a short question or prompt (a few words to one sentence).
+- "back" is a concise, self-contained answer (one or two sentences).
+- Base every card strictly on the material. Do not invent facts.
+- Make each card test ONE idea. No duplicates.
+
+Return ONLY valid JSON in exactly this shape, nothing else:
+{{
+  "cards": [
+    {{ "front": "string", "back": "string" }}
+  ]
+}}
+
+Course material:
+{source_text}
+"""
+    try:
+        response, _model = llm.generate(
+            "standard",
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+    except Exception as e:
+        return None, f"The AI model could not be reached: {e}"
+
+    raw_text = (response.text or "").strip()
+    if not raw_text:
+        return None, "The model returned an empty response. Try again."
+    try:
+        raw_cards = json.loads(raw_text)["cards"]
+    except Exception as e:
+        return None, f"Could not parse flashcards from model: {e}"
+
+    clean, seen = [], set()
+    for c in raw_cards:
+        front = (c.get("front") or "").strip()
+        back = (c.get("back") or "").strip()
+        key = front.lower()
+        if not front or not back or key in seen:
+            continue
+        seen.add(key)
+        clean.append({"front": front, "back": back})
+
+    if not clean:
+        return None, "The model did not return usable flashcards. Try again."
+    return clean, None
+
+
 def _foundation_gaps(topic_names, max_gaps: int = 3):
     """Find FOUNDATIONAL prerequisite topics the course assumes but doesn't cover.
 
@@ -1051,6 +1109,53 @@ def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = Non
         )
     except Exception as e:
         return {"error": f"Saving the quiz failed: {e}"}
+
+
+@app.post("/generate-flashcards")
+def generate_flashcards(classroom_id: str, document_ids: str = None, count: int = 10, user_id: str = Depends(verify_user)):
+    """Generate spaced-repetition flashcards from chosen coverage and APPEND them.
+
+    Unlike the manual quiz (which is replaced on each build), a flashcard deck
+    accumulates: every call adds new cards, never wipes the existing deck. New
+    cards are due immediately (due_at defaults to now()) so they enter the review
+    queue right away. SM-2 scheduling happens client-side after each review.
+    """
+    _require_classroom_owner(user_id, classroom_id)
+    rate_limit(user_id, "generate-flashcards", 10, 3600)   # 10/hour
+    count = max(1, min(count, 20))
+    doc_ids = [d.strip() for d in (document_ids or "").split(",") if d.strip()]
+
+    q = (
+        supabase.table("document_chunks")
+        .select("content,chunk_index,document_id")
+        .eq("classroom_id", classroom_id)
+    )
+    if doc_ids:
+        q = q.in_("document_id", doc_ids)
+    rows = q.order("chunk_index").execute().data or []
+    if not rows:
+        return {"error": "No processed material found for that selection yet."}
+
+    source_text = "\n\n".join(r["content"] for r in rows)[:12000]
+
+    clean, err = _flashcards_from_text(source_text, count)
+    if err:
+        return {"error": err}
+
+    owner_id = _owner_of_classroom(classroom_id)
+    if not owner_id:
+        return {"error": "Classroom not found."}
+
+    new_rows = [
+        {"classroom_id": classroom_id, "user_id": owner_id, "front": c["front"], "back": c["back"]}
+        for c in clean
+    ]
+    try:
+        supabase.table("flashcards").insert(new_rows).execute()
+    except Exception as e:
+        return {"error": f"Saving the flashcards failed: {e}"}
+
+    return {"created": len(new_rows)}
 
 @app.post("/order-from-plan")
 def order_from_plan(classroom_id: str, plan_path: str = None, plan_id: str = None, dry_run: bool = False, match_threshold: float = 0.45, user_id: str = Depends(verify_user)):

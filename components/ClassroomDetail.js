@@ -440,6 +440,22 @@ export default function ClassroomDetail({ route, navigation }) {
         </TouchableOpacity>
       ) : null}
 
+      {/* Flashcards — spaced-repetition review */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('Flashcards', { classroom })}
+        style={{ marginTop: space.md }}
+      >
+        <LinearGradient colors={gradients.mint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.pathBtn, { borderRadius: radius.lg }]}>
+          <Text style={styles.pathEmoji}>🃏</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pathBtnText}>Flashcards</Text>
+            <Text style={styles.pathBtnSub}>Review & remember with spaced repetition</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color={palette.white} />
+        </LinearGradient>
+      </TouchableOpacity>
+
       {/* ---------- MANAGE: exams, handouts, prerequisites (tucked away) ---------- */}
       <TouchableOpacity
         style={styles.manageHeader}

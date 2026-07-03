@@ -78,13 +78,23 @@ export default function ClassroomsScreen({ navigation, session }) {
   const [startYear, setStartYear] = useState(null);
   const [classrooms, setClassrooms] = useState([]);
   const [profile, setProfile] = useState(null);
+  const [dueCount, setDueCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
   const isPathfinder = profile?.user_type === 'pathfinder';
   const w = words(profile?.user_type);
 
-  useFocusEffect(useCallback(() => { fetchClassrooms(); fetchProfile(); }, []));
+  useFocusEffect(useCallback(() => { fetchClassrooms(); fetchProfile(); fetchDue(); }, []));
+
+  async function fetchDue() {
+    // RLS scopes this to the signed-in user's own cards.
+    const { count } = await supabase
+      .from('flashcards')
+      .select('id', { count: 'exact', head: true })
+      .lte('due_at', new Date().toISOString());
+    setDueCount(count || 0);
+  }
 
   async function fetchClassrooms() {
     const { data, error } = await supabase
@@ -170,11 +180,20 @@ export default function ClassroomsScreen({ navigation, session }) {
       </TouchableOpacity>
 
       <View style={styles.teaserRow}>
-        <View style={styles.teaser}>
-          <Text style={styles.teaserEmoji}>🔁</Text>
-          <Text style={styles.teaserTitle}>Review</Text>
-          <View style={styles.soonPill}><Text style={styles.soonText}>SOON</Text></View>
-        </View>
+        {dueCount > 0 ? (
+          <TouchableOpacity style={[styles.teaser, styles.teaserLive]} activeOpacity={0.85}
+            onPress={() => navigation.navigate('Flashcards')}>
+            <Text style={styles.teaserEmoji}>🔁</Text>
+            <Text style={styles.teaserTitle}>Review</Text>
+            <View style={styles.duePill}><Text style={styles.dueText}>{dueCount} due</Text></View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.teaser}>
+            <Text style={styles.teaserEmoji}>🔁</Text>
+            <Text style={styles.teaserTitle}>Review</Text>
+            <View style={styles.soonPill}><Text style={styles.soonText}>ALL DONE</Text></View>
+          </View>
+        )}
         <View style={styles.teaser}>
           <Text style={styles.teaserEmoji}>✨</Text>
           <Text style={styles.teaserTitle}>Learn new</Text>
@@ -308,6 +327,9 @@ const styles = StyleSheet.create({
   teaserTitle: { fontSize: 14, fontWeight: '800', color: palette.ink },
   soonPill: { backgroundColor: palette.lineSoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2, marginTop: 2 },
   soonText: { fontSize: 9, fontWeight: '800', color: palette.inkSoft, letterSpacing: 0.5 },
+  teaserLive: { borderWidth: 2, borderColor: palette.greenSoft },
+  duePill: { backgroundColor: palette.greenSoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2, marginTop: 2 },
+  dueText: { fontSize: 9, fontWeight: '800', color: palette.greenDark, letterSpacing: 0.5 },
 
   // Add form
   form: { marginBottom: space.lg, backgroundColor: palette.bg, borderRadius: radius.lg, padding: space.lg, ...shadow.card },
