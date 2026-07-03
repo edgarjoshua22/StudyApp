@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -83,12 +83,12 @@ function MoreStack({ session }) {
   );
 }
 
-// Duolingo-style bottom bar: custom colored icon art, no labels, and the active
-// tab wrapped in a rounded cyan outline box.
+// Bottom bar: clean line icons (no labels), active tab wrapped in a rounded
+// violet-tinted box. Icons come from Ionicons so they match the new identity.
 const NAV_ICON = {
-  Home: require('./assets/icons/nav_home.png'),
-  Chat: require('./assets/icons/nav_chat.png'),
-  More: require('./assets/icons/nav_more.png'),
+  Home: { on: 'home', off: 'home-outline' },
+  Chat: { on: 'chatbubble-ellipses', off: 'chatbubble-ellipses-outline' },
+  More: { on: 'grid', off: 'grid-outline' },
 };
 
 function FunTabBar({ state, navigation }) {
@@ -102,7 +102,7 @@ function FunTabBar({ state, navigation }) {
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
         };
         const onLongPress = () => navigation.emit({ type: 'tabLongPress', target: route.key });
-        const src = NAV_ICON[route.name];
+        const icon = NAV_ICON[route.name] || { on: 'ellipse', off: 'ellipse-outline' };
         return (
           <TouchableOpacity
             key={route.key}
@@ -115,9 +115,11 @@ function FunTabBar({ state, navigation }) {
             accessibilityState={focused ? { selected: true } : {}}
           >
             <View style={[tabStyles.iconBox, focused && tabStyles.iconBoxActive]}>
-              {src
-                ? <Image source={src} style={tabStyles.icon} resizeMode="contain" />
-                : <Ionicons name="ellipse" size={28} color={palette.hint} />}
+              <Ionicons
+                name={focused ? icon.on : icon.off}
+                size={26}
+                color={focused ? palette.primary : palette.hint}
+              />
             </View>
           </TouchableOpacity>
         );

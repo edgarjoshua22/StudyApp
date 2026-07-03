@@ -59,6 +59,7 @@ export default function ClassroomDetail({ route, navigation }) {
   const [quiz, setQuiz] = useState(null);          // the single MANUAL quiz, or null
   const [generating, setGenerating] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [showManage, setShowManage] = useState(false);  // collapse admin (exams/handouts/prereqs)
 
   // Coverage picker state (quiz)
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -388,7 +389,9 @@ export default function ClassroomDetail({ route, navigation }) {
         ) : null}
       </LinearGradient>
 
-      {/* ---------- Learning Path — the star CTA ---------- */}
+      {/* ---------- LEARN: the two things you actually do ---------- */}
+
+      {/* Learning Path — the star CTA */}
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={() => navigation.navigate('LessonPath', { classroom })}
@@ -403,55 +406,7 @@ export default function ClassroomDetail({ route, navigation }) {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* ---------- Exams ---------- */}
-      <View style={styles.sectionHeader}>
-        <View style={[styles.sectionDot, { backgroundColor: palette.blueSoft }]}>
-          <Ionicons name="calendar" size={18} color={palette.blueDark} />
-        </View>
-        <Text style={styles.sectionTitle}>Exams</Text>
-        <View style={{ flex: 1 }} />
-        <TouchableOpacity
-          style={[styles.smallAdd, solid(palette.blue, palette.blueDark, radius.pill)]}
-          onPress={openAddExam} activeOpacity={0.85}
-        >
-          <Ionicons name="add" size={24} color={palette.white} />
-        </TouchableOpacity>
-      </View>
-
-      {exams.length === 0 ? (
-        <Text style={styles.emptyLine}>No exams yet. Add one to shape your study schedule. 📅</Text>
-      ) : exams.map((ex) => {
-        const n = coverageCounts[ex.id] || 0;
-        return (
-          <TouchableOpacity key={ex.id} style={styles.rowCard} activeOpacity={0.85} onPress={() => openEditExam(ex)}>
-            <View style={[styles.rowIcon, { backgroundColor: palette.blueSoft }]}>
-              <Ionicons name="calendar" size={20} color={palette.blueDark} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle} numberOfLines={1}>{ex.name}</Text>
-              <Text style={styles.rowMeta} numberOfLines={1}>
-                {formatExamDate(ex.exam_date)}{countdownText(ex.exam_date)} · {n} handout{n === 1 ? '' : 's'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={palette.hint} />
-          </TouchableOpacity>
-        );
-      })}
-
-      <View style={{ height: space.xxl }} />
-
-      <HandoutsList classroomId={classroom.id} />
-
-      <Prerequisites classroom={classroom} />
-
-      {/* ---------- Quiz ---------- */}
-      <View style={[styles.sectionHeader, { marginTop: space.sm }]}>
-        <View style={[styles.sectionDot, { backgroundColor: palette.purpleSoft }]}>
-          <Ionicons name="help-circle" size={18} color={palette.purpleDark} />
-        </View>
-        <Text style={styles.sectionTitle}>Practice quiz</Text>
-      </View>
-
+      {/* Practice quiz — second learn action */}
       <TouchableOpacity
         style={[styles.generateBtn, solid(palette.purple, palette.purpleDark, radius.lg), generating && styles.dim]}
         onPress={onGeneratePress}
@@ -464,17 +419,13 @@ export default function ClassroomDetail({ route, navigation }) {
           <>
             <Ionicons name="sparkles" size={20} color={palette.white} />
             <Text style={styles.generateBtnText}>
-              {quiz ? 'Generate a new quiz' : 'Generate a quiz'}
+              {quiz ? 'Practice — new quiz' : 'Practice with a quiz'}
             </Text>
           </>
         )}
       </TouchableOpacity>
 
-      {!quiz ? (
-        <Text style={styles.emptyLine}>
-          No quiz yet. Tap “Generate a quiz,” choose what it should cover, and you’re set. ✨
-        </Text>
-      ) : (
+      {quiz ? (
         <TouchableOpacity style={styles.rowCard} activeOpacity={0.85} onPress={() => openQuiz(quiz)} disabled={opening}>
           <View style={[styles.rowIcon, { backgroundColor: palette.purpleSoft }]}>
             <Text style={{ fontSize: 20 }}>📝</Text>
@@ -487,12 +438,73 @@ export default function ClassroomDetail({ route, navigation }) {
             ? <ActivityIndicator color={palette.purple} />
             : <Ionicons name="chevron-forward" size={20} color={palette.hint} />}
         </TouchableOpacity>
-      )}
+      ) : null}
 
-      <TouchableOpacity style={styles.deleteButton} onPress={confirmDelete} activeOpacity={0.7}>
-        <Ionicons name="trash-outline" size={18} color={palette.red} />
-        <Text style={styles.deleteButtonText}>Delete classroom</Text>
+      {/* ---------- MANAGE: exams, handouts, prerequisites (tucked away) ---------- */}
+      <TouchableOpacity
+        style={styles.manageHeader}
+        onPress={() => setShowManage((v) => !v)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.sectionDot, { backgroundColor: palette.lineSoft }]}>
+          <Ionicons name="construct-outline" size={18} color={palette.inkSoft} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle}>Manage</Text>
+          <Text style={styles.manageSub}>Exams, handouts & prerequisites</Text>
+        </View>
+        <Ionicons name={showManage ? 'chevron-up' : 'chevron-down'} size={22} color={palette.hint} />
       </TouchableOpacity>
+
+      {showManage ? (
+        <View style={styles.manageBody}>
+          {/* Exams */}
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionDot, { backgroundColor: palette.blueSoft }]}>
+              <Ionicons name="calendar" size={18} color={palette.blueDark} />
+            </View>
+            <Text style={styles.sectionTitle}>Exams</Text>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity
+              style={[styles.smallAdd, solid(palette.blue, palette.blueDark, radius.pill)]}
+              onPress={openAddExam} activeOpacity={0.85}
+            >
+              <Ionicons name="add" size={24} color={palette.white} />
+            </TouchableOpacity>
+          </View>
+
+          {exams.length === 0 ? (
+            <Text style={styles.emptyLine}>No exams yet. Add one to shape your study schedule. 📅</Text>
+          ) : exams.map((ex) => {
+            const n = coverageCounts[ex.id] || 0;
+            return (
+              <TouchableOpacity key={ex.id} style={styles.rowCard} activeOpacity={0.85} onPress={() => openEditExam(ex)}>
+                <View style={[styles.rowIcon, { backgroundColor: palette.blueSoft }]}>
+                  <Ionicons name="calendar" size={20} color={palette.blueDark} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{ex.name}</Text>
+                  <Text style={styles.rowMeta} numberOfLines={1}>
+                    {formatExamDate(ex.exam_date)}{countdownText(ex.exam_date)} · {n} handout{n === 1 ? '' : 's'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={palette.hint} />
+              </TouchableOpacity>
+            );
+          })}
+
+          <View style={{ height: space.xl }} />
+
+          <HandoutsList classroomId={classroom.id} />
+
+          <Prerequisites classroom={classroom} />
+
+          <TouchableOpacity style={styles.deleteButton} onPress={confirmDelete} activeOpacity={0.7}>
+            <Ionicons name="trash-outline" size={18} color={palette.red} />
+            <Text style={styles.deleteButtonText}>Delete classroom</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* ---------- Exam add/edit sheet ---------- */}
       <Modal visible={examModalOpen} transparent animationType="slide" onRequestClose={() => setExamModalOpen(false)}>
@@ -670,6 +682,15 @@ const styles = StyleSheet.create({
   pathEmoji: { fontSize: 30 },
   pathBtnText: { color: palette.white, fontSize: 18, fontWeight: '800' },
   pathBtnSub: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '600', marginTop: 1 },
+
+  // Manage (collapsible admin)
+  manageHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: space.sm,
+    backgroundColor: palette.bg, borderRadius: radius.lg, padding: space.md,
+    marginTop: space.md, ...shadow.card,
+  },
+  manageSub: { fontSize: 12, color: palette.inkSoft, marginTop: 2, fontWeight: '600' },
+  manageBody: { marginTop: space.lg },
 
   // Sections
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginBottom: space.md },

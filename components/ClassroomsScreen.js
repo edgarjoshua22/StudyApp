@@ -148,6 +148,42 @@ export default function ClassroomsScreen({ navigation, session }) {
     </LinearGradient>
   );
 
+  // "Today" hub: one real action (jump back into your most recent path) plus
+  // teasers for methods landing in later phases (Phase 2 review, Phase 4 learn-new).
+  const recent = classrooms[0];
+  const Today = recent ? (
+    <View style={styles.today}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('LessonPath', { classroom: recent })}
+      >
+        <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={styles.continue}>
+          <View style={styles.continueIcon}><Text style={{ fontSize: 26 }}>🗺️</Text></View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.continueOverline}>JUMP BACK IN</Text>
+            <Text style={styles.continueTitle} numberOfLines={1}>{recent.name}</Text>
+            <Text style={styles.continueSub}>Open your learning path</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color={palette.white} />
+        </LinearGradient>
+      </TouchableOpacity>
+
+      <View style={styles.teaserRow}>
+        <View style={styles.teaser}>
+          <Text style={styles.teaserEmoji}>🔁</Text>
+          <Text style={styles.teaserTitle}>Review</Text>
+          <View style={styles.soonPill}><Text style={styles.soonText}>SOON</Text></View>
+        </View>
+        <View style={styles.teaser}>
+          <Text style={styles.teaserEmoji}>✨</Text>
+          <Text style={styles.teaserTitle}>Learn new</Text>
+          <View style={styles.soonPill}><Text style={styles.soonText}>SOON</Text></View>
+        </View>
+      </View>
+    </View>
+  ) : null;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <FlatList
@@ -157,6 +193,7 @@ export default function ClassroomsScreen({ navigation, session }) {
         ListHeaderComponent={
           <View>
             {Hero}
+            {!showForm ? Today : null}
             {showForm ? (
               <View style={styles.form}>
                 <Text style={styles.formTitle}>New {isPathfinder ? 'topic' : 'subject'}</Text>
@@ -248,6 +285,29 @@ const styles = StyleSheet.create({
   chipIcon: { fontSize: 20 },
   chipValue: { color: palette.white, fontSize: 16, fontWeight: '800' },
   chipLabel: { color: '#eaffd6', fontSize: 10, fontWeight: '700' },
+
+  // Today hub
+  today: { marginBottom: space.xl },
+  continue: {
+    flexDirection: 'row', alignItems: 'center', gap: space.md,
+    borderRadius: radius.lg, padding: space.lg, ...shadow.card,
+  },
+  continueIcon: {
+    width: 48, height: 48, borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.22)', justifyContent: 'center', alignItems: 'center',
+  },
+  continueOverline: { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  continueTitle: { color: palette.white, fontSize: 18, fontWeight: '800', marginTop: 1 },
+  continueSub: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '600', marginTop: 1 },
+  teaserRow: { flexDirection: 'row', gap: space.md, marginTop: space.md },
+  teaser: {
+    flex: 1, backgroundColor: palette.bg, borderRadius: radius.lg, padding: space.md,
+    alignItems: 'center', gap: 4, ...shadow.card,
+  },
+  teaserEmoji: { fontSize: 26 },
+  teaserTitle: { fontSize: 14, fontWeight: '800', color: palette.ink },
+  soonPill: { backgroundColor: palette.lineSoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2, marginTop: 2 },
+  soonText: { fontSize: 9, fontWeight: '800', color: palette.inkSoft, letterSpacing: 0.5 },
 
   // Add form
   form: { marginBottom: space.lg, backgroundColor: palette.bg, borderRadius: radius.lg, padding: space.lg, ...shadow.card },
