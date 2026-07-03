@@ -70,7 +70,7 @@ function StatChip({ icon, value, label }) {
 export default function ClassroomsScreen({ navigation, session }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [goal, setGoal] = useState('');
+  const [classGoal, setClassGoal] = useState('');
   const [semester, setSemester] = useState('');
   const [startYear, setStartYear] = useState(null);
   const [classrooms, setClassrooms] = useState([]);
@@ -114,12 +114,12 @@ export default function ClassroomsScreen({ navigation, session }) {
       name: name.trim(),
       semester: fullSemester,
       description: description.trim() || null,
-      goal: goal.trim() || null,
+      goal: classGoal.trim() || null,
       user_id: session.user.id,
     });
     if (error) Alert.alert('Could not save', error.message);
     else {
-      setName(''); setDescription(''); setGoal(''); setSemester(''); setStartYear(null);
+      setName(''); setDescription(''); setClassGoal(''); setSemester(''); setStartYear(null);
       setShowForm(false); fetchClassrooms();
     }
     setLoading(false);
@@ -165,7 +165,7 @@ export default function ClassroomsScreen({ navigation, session }) {
                   value={description} onChangeText={setDescription} multiline />
                 <TextInput style={styles.textArea}
                   placeholder="Your goal — e.g. ace the finals, build intuition" placeholderTextColor={palette.hint}
-                  value={goal} onChangeText={setGoal} multiline />
+                  value={classGoal} onChangeText={setClassGoal} multiline />
                 {!isPathfinder && (
                   <>
                     <Dropdown placeholder="Select semester" value={semester}
