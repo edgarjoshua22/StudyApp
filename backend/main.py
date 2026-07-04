@@ -780,25 +780,12 @@ def version():
     }
 
 
-@app.get("/whoami")
-def whoami(classroom_id: str = None, user_id: str = Depends(verify_user)):
-    """TEMPORARY probe: what verify_user resolved the token to, and — for the
-    given classroom — exactly what _require_classroom_owner reads and compares.
-    Remove after."""
-    out = {"user_id": user_id, "supabase_url": os.environ.get("SUPABASE_URL", "unset")}
-    if classroom_id:
-        row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
-        out["classroom_owner_id"] = (row or {}).get("user_id")
-        out["match"] = bool(row) and row.get("user_id") == user_id
-    return out
-
-
 def _require_classroom_owner(user_id: str, classroom_id: str):
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
     if not row:
         raise HTTPException(status_code=404, detail="Classroom not found")
     if row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail=f"owner_mismatch cid={classroom_id!r} owner={row.get('user_id')!r} token={user_id!r}")
+        raise HTTPException(status_code=403, detail="This classroom belongs to a different account")
 
 
 def _require_document_owner(user_id: str, document_id: str):
@@ -2122,7 +2109,7 @@ def lesson_quiz(lesson_id: str, background_tasks: BackgroundTasks, user_id: str 
 
 
 @app.post("/prewarm-lessons")
-def prewarm_lessons(classroom_id: str, background_tasks: BackgroundTasks, count: int = 2, user_id: str = Depends(verify_user)):
+def prewarm_lessons(classroom_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(verify_user), count: int = 2):
     """Warm the next `count` uncached tiles for a classroom in the background and
     return immediately. The app calls this when the path screen opens so the
     current (and next) tile are ready before they're tapped."""
