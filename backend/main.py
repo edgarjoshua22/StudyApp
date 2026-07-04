@@ -780,6 +780,13 @@ def version():
     }
 
 
+@app.get("/whoami")
+def whoami(user_id: str = Depends(verify_user)):
+    """TEMPORARY probe: returns exactly what verify_user resolved the caller's
+    token to, plus the SUPABASE_URL the running image uses. Remove after."""
+    return {"user_id": user_id, "supabase_url": os.environ.get("SUPABASE_URL", "unset")}
+
+
 def _require_classroom_owner(user_id: str, classroom_id: str):
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
     if not row:
