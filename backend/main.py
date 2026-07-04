@@ -781,10 +781,16 @@ def version():
 
 
 @app.get("/whoami")
-def whoami(user_id: str = Depends(verify_user)):
-    """TEMPORARY probe: returns exactly what verify_user resolved the caller's
-    token to, plus the SUPABASE_URL the running image uses. Remove after."""
-    return {"user_id": user_id, "supabase_url": os.environ.get("SUPABASE_URL", "unset")}
+def whoami(classroom_id: str = None, user_id: str = Depends(verify_user)):
+    """TEMPORARY probe: what verify_user resolved the token to, and — for the
+    given classroom — exactly what _require_classroom_owner reads and compares.
+    Remove after."""
+    out = {"user_id": user_id, "supabase_url": os.environ.get("SUPABASE_URL", "unset")}
+    if classroom_id:
+        row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
+        out["classroom_owner_id"] = (row or {}).get("user_id")
+        out["match"] = bool(row) and row.get("user_id") == user_id
+    return out
 
 
 def _require_classroom_owner(user_id: str, classroom_id: str):
