@@ -789,11 +789,16 @@ def version():
 
 
 def _require_classroom_owner(user_id: str, classroom_id: str):
+    # If an endpoint function is ever called internally without threading user_id
+    # through, the default is a raw Depends object — fail loudly as a server bug
+    # instead of a misleading "belongs to a different account" 403.
+    if not isinstance(user_id, str):
+        raise HTTPException(status_code=500, detail="internal: auth dependency not resolved (endpoint called as plain function)")
     row = supabase.table("classrooms").select("user_id").eq("id", classroom_id).maybe_single().execute().data
     if not row:
         raise HTTPException(status_code=404, detail="Classroom not found")
     if row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail=f"owner_mismatch owner={row.get('user_id')!r} token={user_id!r}")
+        raise HTTPException(status_code=403, detail="This classroom belongs to a different account")
 
 
 def _require_document_owner(user_id: str, document_id: str):
@@ -1761,7 +1766,10 @@ def build_path(classroom_id: str, chunks_per_lesson: int = 2, max_lessons_per_un
         # First build for this classroom: derive the topics automatically so the
         # path "just builds" in one tap. Never surface an internal endpoint name
         # to the user -- only friendly, actionable text.
-        derived = derive_topics(classroom_id)
+        # Called as a plain function, so FastAPI injection does NOT run here —
+        # user_id must be passed through explicitly or derive_topics' ownership
+        # guard would compare the owner against a raw Depends object and 403.
+        derived = derive_topics(classroom_id, user_id=user_id)
         if isinstance(derived, dict) and derived.get("error"):
             return {"error": derived["error"]}
         topics = (
