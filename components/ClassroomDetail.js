@@ -319,7 +319,7 @@ export default function ClassroomDetail({ route, navigation }) {
 
       setPickerOpen(false);
       await fetchQuiz();
-      navigation.navigate('Quiz', { quiz: data });
+      navigation.navigate('Quiz', { quiz: data, classroomId: classroom.id });
     } catch (e) {
       Alert.alert(
         'Could not make a quiz',
@@ -340,6 +340,7 @@ export default function ClassroomDetail({ route, navigation }) {
       if (error) throw error;
       navigation.navigate('Quiz', {
         quiz: { quiz_id: q.id, title: q.title, questions: data },
+        classroomId: classroom.id,
       });
     } catch (e) {
       Alert.alert('Could not open quiz', e.message);
@@ -468,6 +469,22 @@ export default function ClassroomDetail({ route, navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.rowTitle}>Match-up</Text>
           <Text style={styles.rowMeta}>Race to pair terms with their meanings</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={palette.hint} />
+      </TouchableOpacity>
+
+      {/* Knowledge map — what you know vs. your gaps (Phase 3) */}
+      <TouchableOpacity
+        style={[styles.rowCard, { marginTop: space.md }]}
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('KnowledgeMap', { classroom })}
+      >
+        <View style={[styles.rowIcon, { backgroundColor: palette.primarySoft }]}>
+          <Text style={{ fontSize: 20 }}>🗺️</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rowTitle}>Knowledge map</Text>
+          <Text style={styles.rowMeta}>See what you know and where your gaps are</Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={palette.hint} />
       </TouchableOpacity>

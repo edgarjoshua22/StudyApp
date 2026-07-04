@@ -24,6 +24,8 @@ const GRADE_BUTTONS = [
 ];
 // Active-recall verdicts map onto the SM-2 grades.
 const VERDICT_GRADE = { incorrect: 'again', partial: 'hard', correct: 'good', excellent: 'easy' };
+// SM-2 grade -> Phase 3 concept-mastery outcome in [0,1] (EMA target).
+const GRADE_OUTCOME = { again: 0, hard: 0.4, good: 0.8, easy: 1 };
 const VERDICT_META = {
   incorrect: { label: 'Keep practising', color: palette.red },
   partial:   { label: 'Almost',          color: palette.orange },
@@ -68,7 +70,7 @@ export default function FlashcardsScreen({ route, navigation }) {
     setLoading(true);
     let q = supabase
       .from('flashcards')
-      .select('id,front,back,ease,interval_days,repetitions')
+      .select('id,front,back,ease,interval_days,repetitions,classroom_id,concept_key,concept_label')
       .lte('due_at', new Date().toISOString())
       .order('due_at', { ascending: true })
       .limit(60);
@@ -85,6 +87,17 @@ export default function FlashcardsScreen({ route, navigation }) {
     const next = schedule(card, g);
     // Persist SM-2 state. RLS ensures we can only touch our own card.
     await supabase.from('flashcards').update(next).eq('id', card.id);
+    // Phase 3: feed the concept-mastery engine (best-effort; untagged cards skip).
+    if (card.concept_key && card.classroom_id) {
+      supabase.rpc('record_concept_results', {
+        p_classroom_id: card.classroom_id,
+        p_results: [{
+          concept_key: card.concept_key,
+          label: card.concept_label,
+          outcome: GRADE_OUTCOME[g] ?? 0,
+        }],
+      }).then(({ error }) => { if (error) console.warn('mastery rpc failed:', error.message); });
+    }
     setReviewed((n) => n + 1);
 
     setQueue((prev) => {

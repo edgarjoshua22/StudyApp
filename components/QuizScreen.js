@@ -6,8 +6,12 @@ import { supabase } from '../lib/supabase';
 import { palette, space, radius, type, shadow, solid } from '../lib/theme';
 
 export default function QuizScreen({ route, navigation }) {
-  const { quiz, lesson } = route.params;    // quiz: { quiz_id, title, questions }; lesson: { id } | undefined
+  const { quiz, lesson, classroomId } = route.params;    // quiz: { quiz_id, title, questions }; lesson: { id, topic_id } | undefined
   const questions = quiz.questions || [];
+
+  // Phase 3: per-question concept outcomes, accumulated as the quiz is answered,
+  // flushed once to the mastery engine when the quiz finishes.
+  const outcomes = React.useRef([]);
 
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState(null);
@@ -36,6 +40,15 @@ export default function QuizScreen({ route, navigation }) {
         score,
         total: questions.length,
       });
+      // Phase 3: feed the concept-mastery engine (best-effort; needs a classroom
+      // and tagged questions — untagged/older quizzes simply contribute nothing).
+      if (classroomId && outcomes.current.length) {
+        const { error: mErr } = await supabase.rpc('record_concept_results', {
+          p_classroom_id: classroomId,
+          p_results: outcomes.current,
+        });
+        if (mErr) console.warn('mastery rpc failed:', mErr.message);
+      }
       // Award XP (+ mark the path node complete, if this came from a lesson).
       // For a path lesson we use one atomic RPC so completion and XP either both
       // land or neither does — no more "lesson done but no XP" drift. Both paths
@@ -65,6 +78,7 @@ export default function QuizScreen({ route, navigation }) {
     setFinished(false);
     setAward(null);
     setAwardErr(null);
+    outcomes.current = [];
   }
 
   if (questions.length === 0) {
@@ -138,7 +152,16 @@ export default function QuizScreen({ route, navigation }) {
     if (selected === null) return;
     if (!checked) {
       setChecked(true);
-      if (selected === q.correct_index) setScore((s) => s + 1);
+      const right = selected === q.correct_index;
+      if (right) setScore((s) => s + 1);
+      if (q.concept_key) {
+        outcomes.current.push({
+          concept_key: q.concept_key,
+          label: q.concept_label,
+          topic_id: lesson?.topic_id ?? null,
+          outcome: right ? 1 : 0,
+        });
+      }
     } else if (isLast) {
       setFinished(true);
     } else {

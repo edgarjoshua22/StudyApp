@@ -200,11 +200,12 @@ export default function ClassroomsScreen({ navigation, session }) {
             <View style={styles.soonPill}><Text style={styles.soonText}>ALL DONE</Text></View>
           </View>
         )}
-        <View style={styles.teaser}>
-          <Text style={styles.teaserEmoji}>✨</Text>
-          <Text style={styles.teaserTitle}>Learn new</Text>
-          <View style={styles.soonPill}><Text style={styles.soonText}>SOON</Text></View>
-        </View>
+        <TouchableOpacity style={[styles.teaser, styles.teaserMap]} activeOpacity={0.85}
+          onPress={() => navigation.navigate('KnowledgeMap', { classroom: recent })}>
+          <Text style={styles.teaserEmoji}>🗺️</Text>
+          <Text style={styles.teaserTitle}>Knowledge map</Text>
+          <View style={styles.mapPill}><Text style={styles.mapText}>KNOW vs GAPS</Text></View>
+        </TouchableOpacity>
       </View>
     </View>
   ) : null;
@@ -333,6 +334,9 @@ const styles = StyleSheet.create({
   soonPill: { backgroundColor: palette.lineSoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2, marginTop: 2 },
   soonText: { fontSize: 9, fontWeight: '800', color: palette.inkSoft, letterSpacing: 0.5 },
   teaserLive: { borderWidth: 2, borderColor: palette.greenSoft },
+  teaserMap: { borderWidth: 2, borderColor: palette.primarySoft },
+  mapPill: { backgroundColor: palette.primarySoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2, marginTop: 2 },
+  mapText: { fontSize: 9, fontWeight: '800', color: palette.primaryDark, letterSpacing: 0.5 },
   duePill: { backgroundColor: palette.greenSoft, borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2, marginTop: 2 },
   dueText: { fontSize: 9, fontWeight: '800', color: palette.greenDark, letterSpacing: 0.5 },
 

@@ -6,7 +6,7 @@ import json
 import time
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from fastapi import FastAPI, BackgroundTasks, Body, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -476,12 +476,13 @@ def _owner_of_classroom(classroom_id: str):
     rows = supabase.table("classrooms").select("user_id").eq("id", classroom_id).execute().data
     return rows[0]["user_id"] if rows else None
 
-def _questions_from_text(source_text: str, num_questions: int, focus: str = None):
+def _questions_from_text(source_text: str, num_questions: int, focus: str = None, level: str = ""):
     """Ask Gemini for multiple-choice questions from text.
 
     Returns (clean_questions, error_message). On success error_message is None;
     on failure clean_questions is None. `focus` optionally nudges the model to
-    emphasise particular topics that appear in the material.
+    emphasise particular topics that appear in the material. `level` (from
+    _learner_level) adapts difficulty/wording to the learner.
     """
     num_questions = max(1, min(num_questions, 15))
     focus_line = ""
@@ -491,11 +492,13 @@ def _questions_from_text(source_text: str, num_questions: int, focus: str = None
             "Prioritise questions about those topics where the material covers them, "
             "but still only use facts present in the material.\n"
         )
+    level_line = f"\n{level}\n" if level else ""
     prompt = f"""You are a quiz writer for a study app. Using ONLY the course material below, write {num_questions} multiple-choice questions that test understanding of the material.
-{focus_line}
+{focus_line}{level_line}
 Rules:
 - Each question has exactly 4 options.
 - Exactly one option is correct.
+- Tag each question with the single concept it tests: a 1-4 word term, idea, method, or named thing (like a glossary entry). Use consistent wording so questions on the same concept share the exact same tag.
 - Base every question and answer strictly on the material. Do not invent facts.
 - Vary which option is the correct one.
 - Keep questions clear and concise.
@@ -507,7 +510,8 @@ Return ONLY valid JSON in exactly this shape, nothing else:
       "question": "string",
       "choices": ["string", "string", "string", "string"],
       "correct_index": 0,
-      "explanation": "one short sentence grounded in the material"
+      "explanation": "one short sentence grounded in the material",
+      "concept": "1-4 word concept this question tests"
     }}
   ]
 }}
@@ -548,6 +552,7 @@ Course material:
             "choices": choices,
             "correct_index": idx,
             "explanation": q.get("explanation", ""),
+            "concept": (q.get("concept") or "").strip(),
         })
 
     if not clean:
@@ -555,13 +560,14 @@ Course material:
     return clean, None
 
 
-def _flashcards_from_text(source_text: str, count: int, focus: str = None):
+def _flashcards_from_text(source_text: str, count: int, focus: str = None, level: str = ""):
     """Ask Gemini for front/back flashcards grounded ONLY in the material.
 
     Returns (clean_cards, error). Each card is {"front","back"}: front is a
     short prompt/question, back is a concise answer. Fronts are deduped so a
     deck built from overlapping chunks doesn't repeat itself. `focus` optionally
-    steers the cards toward particular topics present in the material.
+    steers the cards toward particular topics present in the material. `level`
+    (from _learner_level) adapts wording/difficulty to the learner.
     """
     count = max(1, min(count, 20))
     focus_line = ""
@@ -570,19 +576,21 @@ def _flashcards_from_text(source_text: str, count: int, focus: str = None):
             f"\nFocus the cards on: {focus}. Prioritise these topics where the "
             "material covers them, but only use facts present in the material.\n"
         )
+    level_line = f"\n{level}\n" if level else ""
     prompt = f"""You are making study flashcards for a spaced-repetition app. Using ONLY the course material below, write {count} flashcards that test the most important facts, definitions, and relationships.
-{focus_line}
+{focus_line}{level_line}
 
 Rules:
 - "front" is a short question or prompt (a few words to one sentence).
 - "back" is a concise, self-contained answer (one or two sentences).
 - Base every card strictly on the material. Do not invent facts.
 - Make each card test ONE idea. No duplicates.
+- Tag each card with the single concept it trains: a 1-4 word term, idea, method, or named thing. Use consistent wording so cards on the same concept share the exact same tag.
 
 Return ONLY valid JSON in exactly this shape, nothing else:
 {{
   "cards": [
-    {{ "front": "string", "back": "string" }}
+    {{ "front": "string", "back": "string", "concept": "1-4 word concept this card trains" }}
   ]
 }}
 
@@ -614,7 +622,7 @@ Course material:
         if not front or not back or key in seen:
             continue
         seen.add(key)
-        clean.append({"front": front, "back": back})
+        clean.append({"front": front, "back": back, "concept": (c.get("concept") or "").strip()})
 
     if not clean:
         return None, "The model did not return usable flashcards. Try again."
@@ -657,14 +665,15 @@ Return ONLY valid JSON: {{ "gaps": ["string"] }}"""
     return gaps, None
 
 
-def _questions_from_topic(topic_name: str, num_questions: int):
+def _questions_from_topic(topic_name: str, num_questions: int, level: str = ""):
     """Generate quiz questions for a topic from the model's OWN knowledge (no source
     material). Powers 'bridge' lessons that fill gaps the student's uploads don't
-    cover. Returns (clean_questions, error).
+    cover. Returns (clean_questions, error). `level` adapts difficulty/wording.
     """
     num_questions = max(1, min(num_questions, 15))
+    level_line = f"\n{level}\n" if level else ""
     prompt = f"""You are a tutor writing a short practice quiz to teach a FOUNDATIONAL prerequisite topic to a student whose course materials assume it but do not cover it.
-
+{level_line}
 Topic: "{topic_name}"
 
 Write {num_questions} multiple-choice questions that teach and check the core basics of this topic using standard, widely-accepted curriculum knowledge. Keep them clear and beginner-friendly.
@@ -706,6 +715,7 @@ Return ONLY valid JSON in exactly this shape, nothing else:
         clean.append({
             "question": q["question"], "choices": choices,
             "correct_index": idx, "explanation": q.get("explanation", ""),
+            "concept": topic_name.strip(),   # bridge lessons train the topic itself
         })
     if not clean:
         return None, "The model did not return usable questions. Try again."
@@ -738,6 +748,8 @@ def _save_quiz(classroom_id, document_id, owner_id, title, clean, origin="manual
             "choices": q["choices"],
             "correct_index": q["correct_index"],
             "explanation": q["explanation"],
+            "concept_label": (q.get("concept") or "").strip() or None,
+            "concept_key": (_concept_key(q.get("concept")) or None),
         }
         for i, q in enumerate(clean)
     ]
@@ -753,10 +765,72 @@ def _save_quiz(classroom_id, document_id, owner_id, title, clean, origin="manual
                 "choices": r["choices"],
                 "correct_index": r["correct_index"],
                 "explanation": r["explanation"],
+                "concept_key": r["concept_key"],
+                "concept_label": r["concept_label"],
             }
             for r in rows
         ],
     }
+
+
+_CONCEPT_ARTICLE_RE = re.compile(r"^(the|a|an)\s+", re.IGNORECASE)
+
+
+def _concept_key(label: str) -> str:
+    """Canonical identity for a concept label, so the same concept from separate
+    generation calls merges into ONE mastery row. Handles the drift the LLM
+    actually produces across calls: casing, a leading article ("The Calvin cycle"
+    vs "Calvin cycle"), surrounding punctuation, and repeated whitespace.
+    Returns "" for empty/blank labels (caller stores NULL → doesn't contribute).
+    """
+    k = (label or "").strip().lower()
+    k = _CONCEPT_ARTICLE_RE.sub("", k)
+    k = re.sub(r"\s+", " ", k).strip(" .,:;!?\"'()[]")
+    return k
+
+
+def _learner_level(user_id: str) -> str:
+    """A short instruction describing the learner's level, for generation prompts.
+
+    Phase 3 adaptivity: derived from profiles.user_type + birthdate so difficulty
+    and tone fit the learner (a 10-year-old pathfinder vs. a college student).
+    Returns "" when unknown so prompts stay neutral. Best-effort — never raises.
+    """
+    try:
+        rows = (
+            supabase.table("profiles").select("user_type,birthdate")
+            .eq("id", user_id).limit(1).execute().data
+        ) or []
+    except Exception:
+        return ""
+    if not rows:
+        return ""
+    row = rows[0]
+    utype = (row.get("user_type") or "").lower()
+
+    age = None
+    bd = row.get("birthdate")
+    if bd:
+        try:
+            y, m, d = (int(x) for x in str(bd)[:10].split("-"))
+            today = date.today()
+            age = today.year - y - ((today.month, today.day) < (m, d))
+        except Exception:
+            age = None
+
+    # Age drives tone most; user_type refines framing when age is unknown/adult.
+    if age is not None and age < 13:
+        return (f"The learner is a young child (about {age}). Use very simple words, short "
+                "sentences, and concrete everyday examples; avoid jargon.")
+    if age is not None and age < 18:
+        return (f"The learner is a teenager (about {age}). Keep it clear and relatable; you may "
+                "use technical terms but briefly explain them.")
+    if utype == "student":
+        return ("The learner is a college/university student. You may use proper terminology and "
+                "appropriate depth.")
+    return ("The learner is a self-directed adult learner. Keep it clear and accessible, explaining "
+            "any technical terms in plain language.")
+
 
 # --- Endpoints ---
 
@@ -941,6 +1015,7 @@ def _answer_with_web(prompt):
 def ask(question: str, classroom_id: str, style: str = None, level: str = None, history: list = Body(default=[], embed=True), user_id: str = Depends(verify_user)):
     _require_classroom_owner(user_id, classroom_id)
     rate_limit(user_id, "ask", 30, 60)          # 30/min — chat is interactive
+    lvl = _learner_level(user_id)               # Phase 3: adapt tone/depth to the learner
 
     # Explainer styles (simple / analogy / example) RESTYLE the previous answer,
     # which is already handout-grounded. This deliberately skips retrieval: a
@@ -959,7 +1034,7 @@ def ask(question: str, classroom_id: str, style: str = None, level: str = None, 
                 last_answer = turn["text"].strip()
                 break
         if last_answer:
-            tone = "Use language a young learner can follow. " if (level or "").lower() == "kid" else ""
+            tone = (lvl + " ") if lvl else ""
             rprompt = (
                 f"You are StudyBuddy, a warm study tutor. {tone}{style_instr}\n"
                 "Keep it accurate and grounded in the same facts — do not introduce new claims or restate the question.\n\n"
@@ -1015,7 +1090,7 @@ def ask(question: str, classroom_id: str, style: str = None, level: str = None, 
     prompt = f"""You are StudyBuddy, a warm and encouraging study tutor. Your goal is for the student to genuinely understand — be friendly, clear, and easy to follow.
 
 How to answer:
-- The COURSE MATERIALS below are your PRIMARY source. When they cover the question, build your answer on them and connect the relevant points.
+{('- Pitch it for this learner: ' + lvl + chr(10)) if lvl else ''}- The COURSE MATERIALS below are your PRIMARY source. When they cover the question, build your answer on them and connect the relevant points.
 - Explain like a patient friend: plain language, start simple, then add detail. Add a short concrete example or analogy when it helps something click.
 - Format for easy reading: a couple of short paragraphs, or clean bullet points for lists and steps. **Bold** a key term when it aids scanning. Keep it tight — no rambling, and don't restate the question.
 - Always use your own words; never paste chunks of the materials back.
@@ -1126,8 +1201,8 @@ def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = Non
 
     source_text = "\n\n".join(r["content"] for r in rows)[:12000]
 
-    # 3. Generate (with optional topic focus)
-    clean, err = _questions_from_text(source_text, num_questions, focus=topics)
+    # 3. Generate (with optional topic focus + learner-level adaptation)
+    clean, err = _questions_from_text(source_text, num_questions, focus=topics, level=_learner_level(user_id))
     if err:
         return {"error": err}
 
@@ -1206,7 +1281,7 @@ def generate_flashcards(classroom_id: str, document_ids: str = None, topics: str
 
     source_text = "\n\n".join(r["content"] for r in rows)[:12000]
 
-    clean, err = _flashcards_from_text(source_text, count, focus=topics)
+    clean, err = _flashcards_from_text(source_text, count, focus=topics, level=_learner_level(user_id))
     if err:
         return {"error": err}
 
@@ -1215,7 +1290,12 @@ def generate_flashcards(classroom_id: str, document_ids: str = None, topics: str
         return {"error": "Classroom not found."}
 
     new_rows = [
-        {"classroom_id": classroom_id, "user_id": owner_id, "front": c["front"], "back": c["back"]}
+        {
+            "classroom_id": classroom_id, "user_id": owner_id,
+            "front": c["front"], "back": c["back"],
+            "concept_label": (c.get("concept") or "").strip() or None,
+            "concept_key": (_concept_key(c.get("concept")) or None),
+        }
         for c in clean
     ]
     try:
@@ -1246,7 +1326,8 @@ def grade_answer(
     if not answer:
         return {"verdict": "incorrect", "feedback": "No answer given — take a guess next time, even a partial one helps."}
 
-    tone = "Use simple, encouraging language a young learner can follow. " if (level or "").lower() == "kid" else ""
+    lvl = _learner_level(user_id)               # Phase 3: adapt feedback tone to the learner
+    tone = (lvl + " ") if lvl else ""
     grade_prompt = f"""You are grading a student's free-recall answer for a study app. Judge how well the answer matches the REFERENCE in MEANING, not exact wording. Be fair and encouraging. {tone}
 
 PROMPT (what was asked): {prompt}
@@ -2024,6 +2105,8 @@ def _ensure_lesson_quiz(lesson_id: str):
                         "choices": r["choices"],
                         "correct_index": r["correct_index"],
                         "explanation": r["explanation"],
+                        "concept_key": r.get("concept_key"),
+                        "concept_label": r.get("concept_label"),
                     }
                     for r in qq
                 ],
@@ -2040,7 +2123,9 @@ def _ensure_lesson_quiz(lesson_id: str):
             if trow and trow[0].get("name"):
                 tname = trow[0]["name"]
         num_q = 8 if lesson.get("kind") == "review" else 5
-        clean, err = _questions_from_topic(tname, num_q)
+        clean, err = _questions_from_topic(
+            tname, num_q, level=_learner_level(_owner_of_classroom(lesson["classroom_id"]))
+        )
         if err:
             return {"error": err}
         owner_id = _owner_of_classroom(lesson["classroom_id"])
@@ -2079,7 +2164,9 @@ def _ensure_lesson_quiz(lesson_id: str):
     source_text = "\n\n".join(c["content"] for c in chunks)[:12000]
     num_q = 10 if lesson.get("kind") == "exam" else (8 if lesson.get("kind") == "review" else 5)
 
-    clean, err = _questions_from_text(source_text, num_q)
+    clean, err = _questions_from_text(
+        source_text, num_q, level=_learner_level(_owner_of_classroom(lesson["classroom_id"]))
+    )
     if err:
         return {"error": err}
 

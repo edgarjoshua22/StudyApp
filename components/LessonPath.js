@@ -239,7 +239,11 @@ export default function LessonPath({ route, navigation }) {
       catch { throw new Error(`Server error ${res.status}: ${text.slice(0, 140) || 'no response body'}`); }
       if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
       if (data.error) throw new Error(data.error);
-      navigation.navigate('Quiz', { quiz: data, lesson: { id: lesson.id } });
+      navigation.navigate('Quiz', {
+        quiz: data,
+        lesson: { id: lesson.id, topic_id: lesson.topic_id },
+        classroomId: classroom.id,
+      });
     } catch (e) {
       Alert.alert(
         'Could not start the lesson',
