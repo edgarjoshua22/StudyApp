@@ -1745,7 +1745,7 @@ def build_path(classroom_id: str, chunks_per_lesson: int = 2, max_lessons_per_un
     deriving recreates the topic rows.
     """
     _require_classroom_owner(user_id, classroom_id)
-    rate_limit(user_id, "build-path", 30, 3600)      # 30/hour — raised for setup/testing
+    rate_limit(user_id, "build-path", 100, 3600)     # temporarily high — testing consumed the budget
     owner_id = _owner_of_classroom(classroom_id)
     if not owner_id:
         return {"error": "Classroom not found."}
