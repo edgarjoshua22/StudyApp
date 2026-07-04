@@ -135,7 +135,7 @@ export default function KnowledgeMap({ route, navigation }) {
             <Stat n={summary.gap}      label="gaps"     dot="🔴" />
           </View>
 
-          {weakLabels.length > 0 ? (
+          {weakLabels.length > 0 && classroom?.origin !== 'ai_course' ? (
             <GradientButton
               title="Practice your gaps"
               grad="coral"

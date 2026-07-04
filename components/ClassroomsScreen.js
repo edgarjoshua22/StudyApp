@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api';
 import { palette, gradients, unitColor, subjectEmoji, space, radius, type, shadow, solid } from '../lib/theme';
 import { GradientButton } from './ui';
 import { words } from '../lib/copy';
@@ -87,8 +88,34 @@ export default function ClassroomsScreen({ navigation, session }) {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
+  // Phase 4: "teach me anything" — build a zero-content AI course from a typed topic.
+  const [teachOpen, setTeachOpen] = useState(false);
+  const [teachTopic, setTeachTopic] = useState('');
+  const [building, setBuilding] = useState(false);
+
   const isPathfinder = profile?.user_type === 'pathfinder';
   const w = words(profile?.user_type);
+
+  async function buildCourse() {
+    const topic = teachTopic.trim();
+    if (!topic || building) return;
+    setBuilding(true);
+    try {
+      const res = await apiFetch(`/teach-me?topic=${encodeURIComponent(topic)}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `Server error ${res.status}`);
+      setTeachOpen(false);
+      setTeachTopic('');
+      fetchClassrooms();
+      navigation.navigate('LessonPath', {
+        classroom: { id: data.classroom_id, name: data.name, origin: 'ai_course' },
+      });
+    } catch (e) {
+      Alert.alert('Could not build the course', e.message || 'Please try again in a moment.');
+    } finally {
+      setBuilding(false);
+    }
+  }
 
   useFocusEffect(useCallback(() => { fetchClassrooms(); fetchProfile(); fetchDue(); }, []));
 
@@ -219,6 +246,17 @@ export default function ClassroomsScreen({ navigation, session }) {
         ListHeaderComponent={
           <View>
             {Hero}
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setTeachOpen(true)}>
+              <LinearGradient colors={gradients.mint} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={styles.learnNew}>
+                <Text style={styles.learnNewEmoji}>✨</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.learnNewTitle}>Learn something new</Text>
+                  <Text style={styles.learnNewSub}>Type any topic — I'll build a mini-course. No upload needed.</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={22} color={palette.white} />
+              </LinearGradient>
+            </TouchableOpacity>
             {!showForm ? Today : null}
             {showForm ? (
               <View style={styles.form}>
@@ -287,6 +325,32 @@ export default function ClassroomsScreen({ navigation, session }) {
       <TouchableOpacity style={styles.fab} onPress={() => setShowForm((v) => !v)} activeOpacity={0.85}>
         <Ionicons name={showForm ? 'close' : 'add'} size={32} color={palette.white} />
       </TouchableOpacity>
+
+      {/* Phase 4: "teach me anything" topic sheet */}
+      <Modal visible={teachOpen} transparent animationType="fade" onRequestClose={() => !building && setTeachOpen(false)}>
+        <View style={styles.backdrop}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Learn something new</Text>
+            <Text style={styles.teachHint}>What do you want to learn? I'll build a short course and teach it — no upload needed.</Text>
+            <TextInput
+              style={[styles.input, styles.inputText]}
+              placeholder="e.g. The water cycle, How neural nets work"
+              placeholderTextColor={palette.hint}
+              value={teachTopic} onChangeText={setTeachTopic}
+              autoFocus editable={!building} returnKeyType="go" onSubmitEditing={buildCourse}
+            />
+            <GradientButton
+              title={building ? 'Building your course…' : 'Build my course'}
+              grad="mint" onPress={buildCourse} loading={building}
+              style={{ marginTop: space.md }}
+            />
+            <TouchableOpacity onPress={() => !building && setTeachOpen(false)}
+              style={{ marginTop: space.sm, alignItems: 'center', paddingVertical: space.xs }}>
+              <Text style={styles.teachCancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -301,6 +365,17 @@ const styles = StyleSheet.create({
   heroOverline: { color: '#eaffd6', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   heroName: { color: palette.white, fontSize: 26, fontWeight: '800', marginTop: 2 },
   heroSub: { color: '#eaffd6', fontSize: 14, fontWeight: '600', marginTop: 4, marginBottom: space.lg },
+
+  // Phase 4 "Learn something new" card + topic sheet
+  learnNew: {
+    flexDirection: 'row', alignItems: 'center', gap: space.md,
+    borderRadius: radius.lg, padding: space.lg, marginBottom: space.xl, ...shadow.card,
+  },
+  learnNewEmoji: { fontSize: 28 },
+  learnNewTitle: { color: palette.white, fontSize: 17, fontWeight: '800' },
+  learnNewSub: { color: '#e6fff5', fontSize: 13, fontWeight: '600', marginTop: 2 },
+  teachHint: { ...type.caption, marginBottom: space.md, lineHeight: 19 },
+  teachCancel: { ...type.label, color: palette.inkSoft },
   chipRow: { flexDirection: 'row', gap: space.sm },
   chip: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,

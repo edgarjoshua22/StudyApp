@@ -230,6 +230,15 @@ export default function LessonPath({ route, navigation }) {
   }
 
   async function openLesson(lesson) {
+    // Phase 4: AI-course teaching lessons open the read screen first (it then
+    // launches the quiz). Review/quiz nodes and upload-based lessons are unchanged.
+    if (classroom.origin === 'ai_course' && lesson.kind === 'lesson') {
+      navigation.navigate('Lesson', {
+        lesson: { id: lesson.id, topic_id: lesson.topic_id, title: lesson.title },
+        classroom,
+      });
+      return;
+    }
     setOpeningId(lesson.id);
     try {
       const res = await apiFetch(`/lesson-quiz?lesson_id=${lesson.id}`, { method: 'POST' });

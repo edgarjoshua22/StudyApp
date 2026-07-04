@@ -665,10 +665,12 @@ Return ONLY valid JSON: {{ "gaps": ["string"] }}"""
     return gaps, None
 
 
-def _questions_from_topic(topic_name: str, num_questions: int, level: str = ""):
+def _questions_from_topic(topic_name: str, num_questions: int, level: str = "", tag_concept: bool = True):
     """Generate quiz questions for a topic from the model's OWN knowledge (no source
     material). Powers 'bridge' lessons that fill gaps the student's uploads don't
     cover. Returns (clean_questions, error). `level` adapts difficulty/wording.
+    `tag_concept=False` leaves the concept blank (used for whole-course review nodes
+    that have no single topic, so they don't write a junk concept into mastery).
     """
     num_questions = max(1, min(num_questions, 15))
     level_line = f"\n{level}\n" if level else ""
@@ -715,11 +717,83 @@ Return ONLY valid JSON in exactly this shape, nothing else:
         clean.append({
             "question": q["question"], "choices": choices,
             "correct_index": idx, "explanation": q.get("explanation", ""),
-            "concept": topic_name.strip(),   # bridge lessons train the topic itself
+            "concept": topic_name.strip() if tag_concept else "",   # bridge lessons train the topic itself
         })
     if not clean:
         return None, "The model did not return usable questions. Try again."
     return clean, None
+
+
+def _syllabus_from_topic(topic: str, level: str = ""):
+    """Phase 4: design a short course on a free-text topic from the model's OWN
+    knowledge (no uploads). Returns (subtopics, error) where subtopics is an
+    ordered list of {name, intro}. `level` adapts difficulty/wording.
+    """
+    level_line = f"\n{level}\n" if level else ""
+    prompt = f"""You are designing a short, friendly beginner course to teach someone about "{topic}".{level_line}
+Break it into 4 to 7 lessons in a sensible teaching order, from the basics upward. Each lesson covers ONE focused sub-topic.
+
+Rules:
+- Each "name" is a 2-5 word sub-topic (a term or idea), specific to "{topic}".
+- Each "intro" is one friendly sentence saying what that lesson covers.
+- Order them so earlier lessons build the foundation for later ones.
+
+Return ONLY valid JSON in exactly this shape, nothing else:
+{{ "lessons": [ {{ "name": "string", "intro": "string" }} ] }}"""
+    try:
+        response, _m = llm.generate(
+            "standard", contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+    except Exception as e:
+        return None, f"The AI model could not be reached: {e}"
+    try:
+        raw = json.loads((response.text or "").strip())["lessons"]
+    except Exception as e:
+        return None, f"Could not parse the course outline: {e}"
+    clean, seen = [], set()
+    for l in raw:
+        name = (l.get("name") or "").strip()
+        key = name.lower()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        clean.append({"name": name, "intro": (l.get("intro") or "").strip()})
+        if len(clean) >= 7:
+            break
+    if not clean:
+        return None, "I couldn't design a course on that. Try rephrasing the topic."
+    return clean, None
+
+
+def _teach_from_topic(topic_name: str, course: str = None, level: str = ""):
+    """Phase 4: generate a tight ~200-word teaching explainer for one lesson from
+    the model's OWN knowledge. Returns ({explanation, key_points}, error).
+    `course` gives context (the parent course topic); `level` adapts wording.
+    """
+    level_line = f"\n{level}\n" if level else ""
+    ctx = f' as part of a short course on "{course}"' if course else ""
+    prompt = f"""You are a warm, encouraging tutor teaching a student about "{topic_name}"{ctx}.{level_line}
+Write a short lesson that genuinely TEACHES this in plain language — about 180-220 words. Start simple, build up, and add one concrete example or analogy if it helps something click. Do not ask questions; just explain clearly. Then list 3-4 key points worth remembering.
+
+Return ONLY valid JSON in exactly this shape, nothing else:
+{{ "explanation": "the lesson text (~200 words, plain and friendly)", "key_points": ["string", "string", "string"] }}"""
+    try:
+        response, _m = llm.generate(
+            "standard", contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
+    except Exception as e:
+        return None, f"The AI model could not be reached: {e}"
+    try:
+        parsed = json.loads((response.text or "").strip())
+        explanation = (parsed.get("explanation") or "").strip()
+        key_points = [str(k).strip() for k in parsed.get("key_points", []) if str(k).strip()]
+    except Exception as e:
+        return None, f"Could not parse the lesson: {e}"
+    if not explanation:
+        return None, "The model did not return a usable lesson. Try again."
+    return {"explanation": explanation, "key_points": key_points[:4]}, None
 
 
 def _save_quiz(classroom_id, document_id, owner_id, title, clean, origin="manual"):
@@ -2124,7 +2198,8 @@ def _ensure_lesson_quiz(lesson_id: str):
                 tname = trow[0]["name"]
         num_q = 8 if lesson.get("kind") == "review" else 5
         clean, err = _questions_from_topic(
-            tname, num_q, level=_learner_level(_owner_of_classroom(lesson["classroom_id"]))
+            tname, num_q, level=_learner_level(_owner_of_classroom(lesson["classroom_id"])),
+            tag_concept=bool(lesson.get("topic_id")),   # no topic -> don't pollute mastery
         )
         if err:
             return {"error": err}
@@ -2231,6 +2306,139 @@ def lesson_quiz(lesson_id: str, background_tasks: BackgroundTasks, user_id: str 
         rows = supabase.table("lessons").select("classroom_id").eq("id", lesson_id).execute().data
         if rows:
             background_tasks.add_task(_prewarm_lessons, rows[0]["classroom_id"], lesson_id, 1)
+    return payload
+
+
+# ------------------------------------------------------------------------------
+# Phase 4: "Teach me anything" — zero-content AI courses.
+# ------------------------------------------------------------------------------
+def _build_ai_course_path(classroom_id: str, owner_id: str, subtopics: list, course_topic: str):
+    """Create a source-less path for an AI course: one topic + one 'lesson' node
+    per sub-topic (document_id NULL, is_bridge so the quiz path fires), plus a
+    final 'review' course-quiz node. Mirrors build_path's bridge block, doc-less.
+    """
+    topic_rows = [{
+        "user_id": owner_id, "classroom_id": classroom_id, "name": s["name"],
+        "order_index": i, "source": "ai", "intro": s.get("intro") or "", "is_bridge": True,
+    } for i, s in enumerate(subtopics)]
+    inserted = supabase.table("topics").insert(topic_rows).execute().data or []
+    inserted.sort(key=lambda r: r.get("order_index", 0))
+
+    lesson_rows = []
+    for i, t in enumerate(inserted):
+        lesson_rows.append({
+            "user_id": owner_id, "classroom_id": classroom_id, "document_id": None,
+            "topic_id": t["id"], "unit_order": i, "lesson_order": 0,
+            "kind": "lesson", "title": t["name"], "is_bridge": True,
+            "chunk_start": None, "chunk_end": None, "chunk_ids": [],
+        })
+    # Final whole-course quiz. No topic_id -> _ensure_lesson_quiz falls back to the
+    # title, so it quizzes the overall subject.
+    lesson_rows.append({
+        "user_id": owner_id, "classroom_id": classroom_id, "document_id": None,
+        "topic_id": None, "unit_order": len(inserted), "lesson_order": 999,
+        "kind": "review", "title": f"{course_topic} — course quiz", "is_bridge": True,
+        "chunk_start": None, "chunk_end": None, "chunk_ids": [],
+    })
+    supabase.table("lessons").insert(lesson_rows).execute()
+    return len(lesson_rows)
+
+
+def _ensure_lesson_content(lesson_id: str):
+    """Return one lesson node's teaching content, generating + caching it on first
+    open (mirrors _ensure_lesson_quiz). Idempotent & side-effect-safe so a prewarm
+    task can call it too. Returns a dict (may contain 'error')."""
+    rows = supabase.table("lessons").select("*").eq("id", lesson_id).execute().data
+    if not rows:
+        return {"error": "Lesson not found."}
+    lesson = rows[0]
+
+    if lesson.get("content"):
+        return {"content": lesson["content"]}
+
+    # Sub-topic name (topic) and the parent course name (classroom) for context.
+    tname = lesson.get("title") or "this topic"
+    if lesson.get("topic_id"):
+        trow = supabase.table("topics").select("name").eq("id", lesson["topic_id"]).execute().data
+        if trow and trow[0].get("name"):
+            tname = trow[0]["name"]
+    course = None
+    crow = supabase.table("classrooms").select("name").eq("id", lesson["classroom_id"]).execute().data
+    if crow and crow[0].get("name"):
+        course = crow[0]["name"]
+
+    content, err = _teach_from_topic(
+        tname, course=course, level=_learner_level(_owner_of_classroom(lesson["classroom_id"]))
+    )
+    if err:
+        return {"error": err}
+    supabase.table("lessons").update({"content": content}).eq("id", lesson_id).execute()
+    return {"content": content}
+
+
+def _prewarm_lesson_content(classroom_id: str, after_lesson_id: str = None, count: int = 1):
+    """Warm teaching content for the next `count` uncached 'lesson' nodes so the
+    following read screen opens instantly. Stops on first failure (quota cap)."""
+    lessons = _path_lessons_in_order(classroom_id)
+    if after_lesson_id:
+        idx = next((i for i, l in enumerate(lessons) if l["id"] == after_lesson_id), -1)
+        lessons = lessons[idx + 1:] if idx >= 0 else lessons
+    warmed = 0
+    for l in lessons:
+        if warmed >= count:
+            break
+        if l.get("kind") != "lesson":
+            continue  # only teaching lessons have a read screen
+        fresh = supabase.table("lessons").select("content").eq("id", l["id"]).execute().data
+        if fresh and fresh[0].get("content"):
+            continue
+        res = _ensure_lesson_content(l["id"])
+        if isinstance(res, dict) and res.get("error"):
+            break
+        warmed += 1
+    return warmed
+
+
+@app.post("/teach-me")
+def teach_me(topic: str, user_id: str = Depends(verify_user)):
+    """Zero-content course: type a topic -> AI builds a short source-less course
+    (syllabus + path). Returns the new classroom so the app opens its LessonPath."""
+    topic = (topic or "").strip()[:120]
+    if not topic:
+        return {"error": "Tell me what you'd like to learn."}
+    rate_limit(user_id, "teach-me", 5, 3600)   # 5/hour — multi-call generation
+
+    subtopics, err = _syllabus_from_topic(topic, level=_learner_level(user_id))
+    if err:
+        return {"error": err}
+
+    ins = supabase.table("classrooms").insert({
+        "user_id": user_id, "name": topic[:80], "origin": "ai_course",
+    }).execute().data
+    if not ins:
+        return {"error": "Could not create the course."}
+    classroom_id = ins[0]["id"]
+
+    try:
+        _build_ai_course_path(classroom_id, user_id, subtopics, topic)
+    except Exception as e:
+        # Roll back the empty classroom so a failed build doesn't leave a husk.
+        supabase.table("classrooms").delete().eq("id", classroom_id).execute()
+        return {"error": f"Building the course failed: {e}"}
+
+    return {"classroom_id": classroom_id, "name": topic[:80], "lessons": len(subtopics)}
+
+
+@app.post("/lesson-content")
+def lesson_content(lesson_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(verify_user)):
+    """Return one lesson's teaching content (generating on first open), then warm
+    the NEXT lesson's content in the background so it opens instantly."""
+    _require_lesson_owner(user_id, lesson_id)
+    payload = _ensure_lesson_content(lesson_id)
+    if isinstance(payload, dict) and not payload.get("error"):
+        rows = supabase.table("lessons").select("classroom_id").eq("id", lesson_id).execute().data
+        if rows:
+            background_tasks.add_task(_prewarm_lesson_content, rows[0]["classroom_id"], lesson_id, 1)
     return payload
 
 

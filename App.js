@@ -17,6 +17,7 @@ import LessonPath from './components/LessonPath';
 import FlashcardsScreen from './components/FlashcardsScreen';
 import MatchGame from './components/MatchGame';
 import KnowledgeMap from './components/KnowledgeMap';
+import LessonScreen from './components/LessonScreen';
 import Onboarding from './components/Onboarding';
 import StreakScreen from './components/StreakScreen';
 import QuestsScreen from './components/QuestsScreen';
@@ -60,6 +61,7 @@ function HomeStack({ session }) {
       </Stack.Screen>
       <Stack.Screen name="ClassroomDetail" component={ClassroomDetail} options={{ title: '' }} />
       <Stack.Screen name="LessonPath" component={LessonPath} options={{ headerShown: false }} />
+      <Stack.Screen name="Lesson" component={LessonScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Flashcards" component={FlashcardsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="MatchGame" component={MatchGame} options={{ headerShown: false }} />
       <Stack.Screen name="KnowledgeMap" component={KnowledgeMap} options={{ headerShown: false }} />
@@ -238,9 +240,11 @@ function App() {
   );
 }
 
-// Sentry.wrap adds touch/navigation context to reports; it's a safe pass-through
-// when Sentry isn't initialized (no DSN).
-export default Sentry.wrap(App);
+// Sentry.wrap adds touch/navigation context to reports. Only wrap when Sentry was
+// actually initialized (same DSN guard as the init above) — otherwise wrap runs
+// before init and warns "Sentry.wrap was called before Sentry.init" in dev builds
+// that have no DSN. Preview/prod builds ship the DSN, so they stay wrapped.
+export default process.env.EXPO_PUBLIC_SENTRY_DSN ? Sentry.wrap(App) : App;
 
 const tabStyles = StyleSheet.create({
   bar: {

@@ -55,6 +55,9 @@ function nextHour() {
 
 export default function ClassroomDetail({ route, navigation }) {
   const { classroom } = route.params;
+  // Phase 4: AI courses have no handout, so chunk-based practice (manual quiz,
+  // flashcards, match) and the handout/Manage admin don't apply — path + map only.
+  const isAiCourse = classroom.origin === 'ai_course';
   const accent = unitColors[hashIndex(classroom.id, unitColors.length)];
   const [quiz, setQuiz] = useState(null);          // the single MANUAL quiz, or null
   const [generating, setGenerating] = useState(false);
@@ -407,7 +410,9 @@ export default function ClassroomDetail({ route, navigation }) {
         </LinearGradient>
       </TouchableOpacity>
 
-      {/* Practice quiz — second learn action */}
+      {/* Chunk-based practice (needs an uploaded handout) — hidden for AI courses */}
+      {!isAiCourse ? (
+      <>
       <TouchableOpacity
         style={[styles.generateBtn, solid(palette.purple, palette.purpleDark, radius.lg), generating && styles.dim]}
         onPress={onGeneratePress}
@@ -472,6 +477,7 @@ export default function ClassroomDetail({ route, navigation }) {
         </View>
         <Ionicons name="chevron-forward" size={20} color={palette.hint} />
       </TouchableOpacity>
+      </>) : null}
 
       {/* Knowledge map — what you know vs. your gaps (Phase 3) */}
       <TouchableOpacity
@@ -490,6 +496,8 @@ export default function ClassroomDetail({ route, navigation }) {
       </TouchableOpacity>
 
       {/* ---------- MANAGE: exams, handouts, prerequisites (tucked away) ---------- */}
+      {/* Hidden for AI courses — there's nothing to upload or manage. */}
+      {!isAiCourse ? (
       <TouchableOpacity
         style={styles.manageHeader}
         onPress={() => setShowManage((v) => !v)}
@@ -504,8 +512,9 @@ export default function ClassroomDetail({ route, navigation }) {
         </View>
         <Ionicons name={showManage ? 'chevron-up' : 'chevron-down'} size={22} color={palette.hint} />
       </TouchableOpacity>
+      ) : null}
 
-      {showManage ? (
+      {!isAiCourse && showManage ? (
         <View style={styles.manageBody}>
           {/* Exams */}
           <View style={styles.sectionHeader}>
