@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView,
-  TextInput, KeyboardAvoidingView, Platform,
+  TextInput, KeyboardAvoidingView, Platform, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,13 +15,12 @@ import { schedule, keepsInSession, previewInterval } from '../lib/srs';
 // classroom (route.params.classroom) or the whole account (the Today "Review"
 // tile). RLS restricts every query to the signed-in user's own cards, so we
 // never filter by user_id ourselves.
-const GRADE_META = {
-  again: { label: 'Again', color: palette.red,    soft: palette.redSoft },
-  hard:  { label: 'Hard',  color: palette.orange, soft: palette.orangeSoft },
-  good:  { label: 'Good',  color: palette.green,   soft: palette.greenSoft },
-  easy:  { label: 'Easy',  color: palette.blue,    soft: palette.blueSoft },
-};
-const ORDER = ['again', 'hard', 'good', 'easy'];
+// Three self-grade buttons, left-to-right, mapped onto SM-2 grades.
+const GRADE_BUTTONS = [
+  { label: 'Easy',   grade: 'easy', color: palette.green,  soft: palette.greenSoft },
+  { label: 'Medium', grade: 'good', color: palette.blue,   soft: palette.blueSoft },
+  { label: 'Hard',   grade: 'hard', color: palette.orange, soft: palette.orangeSoft },
+];
 // Active-recall verdicts map onto the SM-2 grades.
 const VERDICT_GRADE = { incorrect: 'again', partial: 'hard', correct: 'good', excellent: 'easy' };
 const VERDICT_META = {
@@ -42,6 +41,12 @@ export default function FlashcardsScreen({ route, navigation }) {
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genMsg, setGenMsg] = useState('');
+
+  // Generate/coverage picker
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [handouts, setHandouts] = useState([]);
+  const [selDocs, setSelDocs] = useState({});   // { [documentId]: true }
+  const [topicsText, setTopicsText] = useState('');
 
   // Recall-mode state
   const [answer, setAnswer] = useState('');
@@ -118,14 +123,32 @@ export default function FlashcardsScreen({ route, navigation }) {
     resetCardState();
   }
 
+  async function openPicker() {
+    if (!classroom) return;
+    const { data } = await supabase
+      .from('documents').select('id,file_name,status')
+      .eq('classroom_id', classroom.id).eq('status', 'ready')
+      .order('created_at', { ascending: true });
+    setHandouts(data || []);
+    setSelDocs({});
+    setTopicsText('');
+    setGenMsg('');
+    setPickerOpen(true);
+  }
+
   async function generateDeck() {
     if (!classroom || generating) return;
     setGenerating(true);
     setGenMsg('Reading your handouts and writing cards…');
     try {
-      const res = await apiFetch(`/generate-flashcards?classroom_id=${classroom.id}&count=12`, { method: 'POST' });
+      const ids = Object.keys(selDocs).filter((k) => selDocs[k]);
+      const params = new URLSearchParams({ classroom_id: classroom.id, count: '12' });
+      if (ids.length) params.append('document_ids', ids.join(','));
+      if (topicsText.trim()) params.append('topics', topicsText.trim());
+      const res = await apiFetch(`/generate-flashcards?${params.toString()}`, { method: 'POST' });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
+      setPickerOpen(false);
       setGenMsg('');
       await load();
     } catch (e) {
@@ -190,10 +213,8 @@ export default function FlashcardsScreen({ route, navigation }) {
           </Text>
           {genMsg ? <Text style={styles.genMsg}>{genMsg}</Text> : null}
           {classroom && !reviewed ? (
-            <TouchableOpacity style={[styles.doneBtn, generating && styles.dim]} onPress={generateDeck} disabled={generating} activeOpacity={0.85}>
-              {generating
-                ? <ActivityIndicator color={palette.white} />
-                : <Text style={styles.doneBtnText}>✨ Generate flashcards</Text>}
+            <TouchableOpacity style={styles.doneBtn} onPress={openPicker} activeOpacity={0.85}>
+              <Text style={styles.doneBtnText}>✨ Generate flashcards</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
@@ -256,21 +277,18 @@ export default function FlashcardsScreen({ route, navigation }) {
             </View>
           ) : (
             <View style={styles.grades}>
-              {ORDER.map((g) => {
-                const m = GRADE_META[g];
-                return (
-                  <TouchableOpacity
-                    key={g}
-                    style={[styles.gradeBtn, { backgroundColor: m.soft }, saving && styles.dim]}
-                    onPress={() => grade(g)}
-                    disabled={saving}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.gradeLabel, { color: m.color }]}>{m.label}</Text>
-                    <Text style={[styles.gradeInt, { color: m.color }]}>{previewInterval(card, g)}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {GRADE_BUTTONS.map((b) => (
+                <TouchableOpacity
+                  key={b.grade}
+                  style={[styles.gradeBtn, { backgroundColor: b.soft }, saving && styles.dim]}
+                  onPress={() => grade(b.grade)}
+                  disabled={saving}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.gradeLabel, { color: b.color }]}>{b.label}</Text>
+                  <Text style={[styles.gradeInt, { color: b.color }]}>{previewInterval(card, b.grade)}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </KeyboardAvoidingView>
@@ -284,7 +302,12 @@ export default function FlashcardsScreen({ route, navigation }) {
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                 style={styles.card}
               >
-                <Text style={styles.cardTag}>{flipped ? 'ANSWER' : 'PROMPT'}</Text>
+                {classroom ? (
+                  <TouchableOpacity style={styles.reloadBtn} onPress={openPicker} hitSlop={12} activeOpacity={0.7}>
+                    <Ionicons name="refresh" size={20} color={palette.white} />
+                  </TouchableOpacity>
+                ) : null}
+                <Text style={styles.cardTag}>{flipped ? 'ANSWER' : 'QUESTION'}</Text>
                 <Text style={styles.cardText}>{flipped ? card.back : card.front}</Text>
                 {!flipped ? <Text style={styles.tapHint}>Tap to reveal</Text> : null}
               </LinearGradient>
@@ -294,21 +317,18 @@ export default function FlashcardsScreen({ route, navigation }) {
           {/* Grade buttons (only after flip) */}
           {flipped ? (
             <View style={styles.grades}>
-              {ORDER.map((g) => {
-                const m = GRADE_META[g];
-                return (
-                  <TouchableOpacity
-                    key={g}
-                    style={[styles.gradeBtn, { backgroundColor: m.soft }, saving && styles.dim]}
-                    onPress={() => grade(g)}
-                    disabled={saving}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.gradeLabel, { color: m.color }]}>{m.label}</Text>
-                    <Text style={[styles.gradeInt, { color: m.color }]}>{previewInterval(card, g)}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {GRADE_BUTTONS.map((b) => (
+                <TouchableOpacity
+                  key={b.grade}
+                  style={[styles.gradeBtn, { backgroundColor: b.soft }, saving && styles.dim]}
+                  onPress={() => grade(b.grade)}
+                  disabled={saving}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.gradeLabel, { color: b.color }]}>{b.label}</Text>
+                  <Text style={[styles.gradeInt, { color: b.color }]}>{previewInterval(card, b.grade)}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           ) : (
             <View style={styles.grades}>
@@ -319,6 +339,50 @@ export default function FlashcardsScreen({ route, navigation }) {
           )}
         </>
       )}
+
+      {/* Generate / coverage picker */}
+      <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalWrap}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>New flashcards</Text>
+
+            <Text style={styles.fieldLabel}>Topics (optional)</Text>
+            <TextInput
+              style={styles.topicInput}
+              placeholder="e.g. supply and demand, market structures"
+              placeholderTextColor={palette.hint}
+              value={topicsText}
+              onChangeText={setTopicsText}
+              multiline
+            />
+
+            <Text style={styles.fieldLabel}>Handouts</Text>
+            <Text style={styles.fieldHint}>Leave all unchecked to cover the whole subject.</Text>
+            <ScrollView style={styles.handoutBox}>
+              {handouts.length === 0 ? (
+                <Text style={styles.emptyHandouts}>No processed handouts yet.</Text>
+              ) : handouts.map((h) => {
+                const on = !!selDocs[h.id];
+                return (
+                  <TouchableOpacity key={h.id} style={styles.checkRow} onPress={() => setSelDocs((s) => ({ ...s, [h.id]: !s[h.id] }))} activeOpacity={0.7}>
+                    <Ionicons name={on ? 'checkbox' : 'square-outline'} size={24} color={on ? palette.primary : palette.hint} />
+                    <Text style={styles.checkLabel} numberOfLines={1}>{(h.file_name || 'Handout').replace(/\.pdf$/i, '')}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {genMsg ? <Text style={styles.genMsg}>{genMsg}</Text> : null}
+            <TouchableOpacity style={[styles.doneBtn, { marginTop: space.lg, alignSelf: 'stretch' }, generating && styles.dim]} onPress={generateDeck} disabled={generating} activeOpacity={0.85}>
+              {generating ? <ActivityIndicator color={palette.white} /> : <Text style={styles.doneBtnText}>✨ Generate</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setPickerOpen(false)} disabled={generating}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -355,6 +419,7 @@ const styles = StyleSheet.create({
   refText: { fontSize: 15, color: palette.inkSoft, lineHeight: 22, marginTop: 4, fontWeight: '600' },
 
   card: { borderRadius: radius.xl, padding: space.xxl, minHeight: 260, justifyContent: 'center', alignItems: 'center', ...shadow.card },
+  reloadBtn: { position: 'absolute', top: 12, right: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   cardTag: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginBottom: space.lg },
   cardText: { color: palette.white, fontSize: 22, fontWeight: '800', textAlign: 'center', lineHeight: 30 },
   tapHint: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600', marginTop: space.xl },
@@ -373,4 +438,19 @@ const styles = StyleSheet.create({
   doneBtn: { marginTop: space.xl, backgroundColor: palette.primary, borderRadius: radius.lg, paddingVertical: 14, paddingHorizontal: 40, minHeight: 52, justifyContent: 'center', ...shadow.card },
   doneBtnText: { color: palette.white, fontSize: 16, fontWeight: '800' },
   genMsg: { marginTop: space.lg, fontSize: 13, color: palette.inkSoft, textAlign: 'center', fontWeight: '600' },
+
+  // Picker sheet
+  modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)' },
+  sheet: { backgroundColor: palette.bg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, padding: space.xl, paddingBottom: space.xxl, maxHeight: '85%' },
+  sheetHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: palette.line, alignSelf: 'center', marginBottom: space.md },
+  sheetTitle: { fontSize: 20, fontWeight: '800', color: palette.ink, marginBottom: space.lg },
+  fieldLabel: { fontSize: 14, fontWeight: '800', color: palette.ink, marginTop: space.sm },
+  fieldHint: { fontSize: 12, color: palette.inkSoft, marginBottom: space.sm },
+  topicInput: { borderWidth: 2, borderColor: palette.line, borderRadius: radius.md, padding: 12, fontSize: 15, minHeight: 48, marginTop: 6, marginBottom: 6, textAlignVertical: 'top', color: palette.ink },
+  handoutBox: { maxHeight: 180, borderWidth: 2, borderColor: palette.lineSoft, borderRadius: radius.md, paddingHorizontal: 6, marginBottom: 6 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: 10, paddingHorizontal: 6 },
+  checkLabel: { fontSize: 15, color: palette.ink, flex: 1 },
+  emptyHandouts: { fontSize: 13, color: palette.inkSoft, padding: 12 },
+  cancelBtn: { paddingVertical: 14, alignItems: 'center' },
+  cancelText: { color: palette.hint, fontSize: 15, fontWeight: '800' },
 });

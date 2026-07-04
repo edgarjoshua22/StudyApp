@@ -30,6 +30,11 @@ function nameFromEmail(email = '') {
   const local = (email.split('@')[0] || '').split(/[._\-+0-9]/)[0] || '';
   return local ? local.charAt(0).toUpperCase() + local.slice(1) : 'there';
 }
+// First word of a full name, e.g. "Edgar Joshua Hernandez" -> "Edgar".
+function firstName(full = '') {
+  const f = (full || '').trim().split(/\s+/)[0];
+  return f ? f.charAt(0).toUpperCase() + f.slice(1) : '';
+}
 
 function Dropdown({ placeholder, value, options, onSelect }) {
   const [open, setOpen] = useState(false);
@@ -106,7 +111,7 @@ export default function ClassroomsScreen({ navigation, session }) {
   async function fetchProfile() {
     const { data } = await supabase
       .from('profiles')
-      .select('xp,daily_xp,daily_xp_date,daily_goal,current_streak,user_type')
+      .select('xp,daily_xp,daily_xp_date,daily_goal,current_streak,user_type,full_name')
       .eq('id', session.user.id).maybeSingle();
     setProfile(data || null);
   }
@@ -146,9 +151,10 @@ export default function ClassroomsScreen({ navigation, session }) {
 
   const Hero = (
     <LinearGradient colors={gradients.grape} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
-      <Text style={styles.heroMascot}>🦊</Text>
       <Text style={styles.heroOverline}>{greetingWord().toUpperCase()}</Text>
-      <Text style={styles.heroName}>{profile?.full_name || nameFromEmail(session.user.email)} 👋</Text>
+      <Text style={styles.heroName}>
+        {firstName(profile?.full_name) || nameFromEmail(session.user.email)} 👋
+      </Text>
       <Text style={styles.heroSub}>{w.heroSub}</Text>
       <View style={styles.chipRow}>
         <StatChip icon="🔥" value={streak} label="day streak" />
@@ -291,7 +297,6 @@ const styles = StyleSheet.create({
   hero: {
     borderRadius: radius.xl, padding: space.xl, marginBottom: space.xl, overflow: 'hidden',
   },
-  heroMascot: { position: 'absolute', right: 14, top: 6, fontSize: 64, opacity: 0.28 },
   heroOverline: { color: '#eaffd6', fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   heroName: { color: palette.white, fontSize: 26, fontWeight: '800', marginTop: 2 },
   heroSub: { color: '#eaffd6', fontSize: 14, fontWeight: '600', marginTop: 4, marginBottom: space.lg },
