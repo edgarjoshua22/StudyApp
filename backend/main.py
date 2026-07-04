@@ -1714,7 +1714,7 @@ def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_
     deriving recreates the topic rows.
     """
     _require_classroom_owner(user_id, classroom_id)
-    rate_limit(user_id, "build-path", 5, 3600)       # 5/hour — heavy background job
+    rate_limit(user_id, "build-path", 30, 3600)      # 30/hour — raised for setup/testing
     owner_id = _owner_of_classroom(classroom_id)
     if not owner_id:
         return {"error": "Classroom not found."}
