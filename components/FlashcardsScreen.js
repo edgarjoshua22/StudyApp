@@ -16,10 +16,11 @@ import { schedule, keepsInSession, previewInterval } from '../lib/srs';
 // tile). RLS restricts every query to the signed-in user's own cards, so we
 // never filter by user_id ourselves.
 // Three self-grade buttons, left-to-right, mapped onto SM-2 grades.
+// Traffic-light colours so the difficulty is obvious at a glance.
 const GRADE_BUTTONS = [
   { label: 'Easy',   grade: 'easy', color: palette.green,  soft: palette.greenSoft },
-  { label: 'Medium', grade: 'good', color: palette.blue,   soft: palette.blueSoft },
-  { label: 'Hard',   grade: 'hard', color: palette.orange, soft: palette.orangeSoft },
+  { label: 'Medium', grade: 'good', color: palette.orange, soft: palette.orangeSoft },
+  { label: 'Hard',   grade: 'hard', color: palette.red,    soft: palette.redSoft },
 ];
 // Active-recall verdicts map onto the SM-2 grades.
 const VERDICT_GRADE = { incorrect: 'again', partial: 'hard', correct: 'good', excellent: 'easy' };
@@ -298,7 +299,7 @@ export default function FlashcardsScreen({ route, navigation }) {
           <ScrollView contentContainerStyle={styles.cardWrap}>
             <TouchableOpacity activeOpacity={0.95} onPress={() => setFlipped((f) => !f)} style={{ width: '100%' }}>
               <LinearGradient
-                colors={flipped ? gradients.mint : gradients.primary}
+                colors={gradients.primary}
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                 style={styles.card}
               >
