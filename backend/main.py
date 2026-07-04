@@ -555,15 +555,23 @@ Course material:
     return clean, None
 
 
-def _flashcards_from_text(source_text: str, count: int):
+def _flashcards_from_text(source_text: str, count: int, focus: str = None):
     """Ask Gemini for front/back flashcards grounded ONLY in the material.
 
     Returns (clean_cards, error). Each card is {"front","back"}: front is a
     short prompt/question, back is a concise answer. Fronts are deduped so a
-    deck built from overlapping chunks doesn't repeat itself.
+    deck built from overlapping chunks doesn't repeat itself. `focus` optionally
+    steers the cards toward particular topics present in the material.
     """
     count = max(1, min(count, 20))
+    focus_line = ""
+    if focus:
+        focus_line = (
+            f"\nFocus the cards on: {focus}. Prioritise these topics where the "
+            "material covers them, but only use facts present in the material.\n"
+        )
     prompt = f"""You are making study flashcards for a spaced-repetition app. Using ONLY the course material below, write {count} flashcards that test the most important facts, definitions, and relationships.
+{focus_line}
 
 Rules:
 - "front" is a short question or prompt (a few words to one sentence).
@@ -1144,13 +1152,17 @@ def generate_quiz(classroom_id: str, document_ids: str = None, topics: str = Non
 
 
 @app.post("/generate-flashcards")
-def generate_flashcards(classroom_id: str, document_ids: str = None, count: int = 10, user_id: str = Depends(verify_user)):
+def generate_flashcards(classroom_id: str, document_ids: str = None, topics: str = None, count: int = 10, user_id: str = Depends(verify_user)):
     """Generate spaced-repetition flashcards from chosen coverage and APPEND them.
 
     Unlike the manual quiz (which is replaced on each build), a flashcard deck
     accumulates: every call adds new cards, never wipes the existing deck. New
     cards are due immediately (due_at defaults to now()) so they enter the review
     queue right away. SM-2 scheduling happens client-side after each review.
+
+    document_ids -> comma-separated handouts to cover (empty = whole classroom).
+    topics       -> optional free text; ranks chunks by similarity and focuses the
+                    cards on those topics.
     """
     _require_classroom_owner(user_id, classroom_id)
     rate_limit(user_id, "generate-flashcards", 10, 3600)   # 10/hour
@@ -1159,7 +1171,7 @@ def generate_flashcards(classroom_id: str, document_ids: str = None, count: int 
 
     q = (
         supabase.table("document_chunks")
-        .select("content,chunk_index,document_id")
+        .select("content,chunk_index,document_id,embedding")
         .eq("classroom_id", classroom_id)
     )
     if doc_ids:
@@ -1168,9 +1180,28 @@ def generate_flashcards(classroom_id: str, document_ids: str = None, count: int 
     if not rows:
         return {"error": "No processed material found for that selection yet."}
 
+    # If the user named topics, rank chunks by similarity to those topics.
+    if topics:
+        try:
+            tvec = embed_text(topics, "RETRIEVAL_QUERY")
+            scored = []
+            for r in rows:
+                v = _parse_vec(r.get("embedding"))
+                if v:
+                    scored.append((dot(tvec, v), r))
+            if scored:
+                scored.sort(key=lambda x: x[0], reverse=True)
+                top = [r for _, r in scored[:40]]
+                top.sort(key=lambda r: (r["document_id"], r["chunk_index"]))
+                rows = top
+        except Exception:
+            rows = rows[:40]
+    else:
+        rows = rows[:40]
+
     source_text = "\n\n".join(r["content"] for r in rows)[:12000]
 
-    clean, err = _flashcards_from_text(source_text, count)
+    clean, err = _flashcards_from_text(source_text, count, focus=topics)
     if err:
         return {"error": err}
 
