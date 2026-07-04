@@ -1703,7 +1703,7 @@ def derive_topics(classroom_id: str, plan_id: str = None, source: str = "auto",
 
 
 @app.post("/build-path")
-def build_path(classroom_id: str, background_tasks: BackgroundTasks, chunks_per_lesson: int = 2, max_lessons_per_unit: int = 0, rebuild: bool = False, user_id: str = Depends(verify_user)):
+def build_path(classroom_id: str, chunks_per_lesson: int = 2, max_lessons_per_unit: int = 0, rebuild: bool = False, user_id: str = Depends(verify_user)):
     """Build the Duolingo-style path with TOPICS as the units (Philosophy B pacing).
 
     Each topic (from /derive-topics, ordered by order_index) becomes a unit of short
