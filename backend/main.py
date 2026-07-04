@@ -793,7 +793,7 @@ def _require_classroom_owner(user_id: str, classroom_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Classroom not found")
     if row["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="This classroom belongs to a different account")
+        raise HTTPException(status_code=403, detail=f"owner_mismatch owner={row.get('user_id')!r} token={user_id!r}")
 
 
 def _require_document_owner(user_id: str, document_id: str):
