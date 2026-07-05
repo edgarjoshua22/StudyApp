@@ -724,12 +724,25 @@ Return ONLY valid JSON in exactly this shape, nothing else:
     return clean, None
 
 
-def _syllabus_from_topic(topic: str, level: str = ""):
-    """Phase 4: design a short course on a free-text topic from the model's OWN
-    knowledge (no uploads). Returns (subtopics, error) where subtopics is an
-    ordered list of {name, intro}. `level` adapts difficulty/wording.
-    """
-    level_line = f"\n{level}\n" if level else ""
+def _clean_subtopics(raw):
+    """Normalise a raw lessons list into ordered, de-duped {name, intro} (max 7)."""
+    clean, seen = [], set()
+    for l in raw or []:
+        if not isinstance(l, dict):
+            continue
+        name = (l.get("name") or "").strip()
+        key = name.lower()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        clean.append({"name": name, "intro": (l.get("intro") or "").strip()})
+        if len(clean) >= 7:
+            break
+    return clean
+
+
+def _syllabus_model_only(topic: str, level_line: str):
+    """Fallback: design the course from the model's own knowledge (no grounding)."""
     prompt = f"""You are designing a short, friendly beginner course to teach someone about "{topic}".{level_line}
 Break it into 4 to 7 lessons in a sensible teaching order, from the basics upward. Each lesson covers ONE focused sub-topic.
 
@@ -746,33 +759,63 @@ Return ONLY valid JSON in exactly this shape, nothing else:
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
     except Exception as e:
-        return None, f"The AI model could not be reached: {e}"
+        return None, [], f"The AI model could not be reached: {e}"
     try:
         raw = json.loads((response.text or "").strip())["lessons"]
     except Exception as e:
-        return None, f"Could not parse the course outline: {e}"
-    clean, seen = [], set()
-    for l in raw:
-        name = (l.get("name") or "").strip()
-        key = name.lower()
-        if not name or key in seen:
-            continue
-        seen.add(key)
-        clean.append({"name": name, "intro": (l.get("intro") or "").strip()})
-        if len(clean) >= 7:
-            break
-    if not clean:
-        return None, "I couldn't design a course on that. Try rephrasing the topic."
-    return clean, None
+        return None, [], f"Could not parse the course outline: {e}"
+    return _clean_subtopics(raw), [], None
 
 
-def _teach_from_topic(topic_name: str, course: str = None, level: str = ""):
-    """Phase 4: generate a tight ~200-word teaching explainer for one lesson from
-    the model's OWN knowledge. Returns ({explanation, key_points}, error).
-    `course` gives context (the parent course topic); `level` adapts wording.
+def _syllabus_from_topic(topic: str, level: str = ""):
+    """Phase 4: design a short course on a free-text topic. Grounds the roadmap in
+    how reputable educational institutions actually teach the subject (web search),
+    and falls back to the model's own knowledge if grounding is unavailable.
+    Returns (subtopics, sources, error): subtopics is an ordered list of
+    {name, intro}; sources is a ranked list of {title, url}. `level` adapts wording.
     """
     level_line = f"\n{level}\n" if level else ""
-    ctx = f' as part of a short course on "{course}"' if course else ""
+    prompt = f"""You are designing a short, friendly course to teach someone about "{topic}".{level_line}
+Research how this subject is actually taught by REPUTABLE educational sources — prefer universities and their open courseware (e.g. MIT OpenCourseWare, .edu / .ac.uk syllabi), Khan Academy, established textbooks (e.g. OpenStax), and authoritative references (Britannica, government/scientific bodies). Avoid forums, SEO blogs, and low-quality sites. Base the roadmap on how those real courses sequence the material.
+
+Break it into 4 to 7 lessons in a sensible teaching order, from the basics upward. Each lesson covers ONE focused sub-topic.
+
+Rules:
+- Each "name" is a 2-5 word sub-topic (a term or idea), specific to "{topic}".
+- Each "intro" is one friendly sentence saying what that lesson covers.
+- Order them so earlier lessons build the foundation for later ones.
+
+Return ONLY a JSON object in exactly this shape (no prose, no markdown):
+{{ "lessons": [ {{ "name": "string", "intro": "string" }} ] }}"""
+
+    obj, sources, err = _generate_grounded_json(prompt)
+    if obj is not None:
+        clean = _clean_subtopics(obj.get("lessons"))
+        if clean:
+            return clean, sources, None
+    # Grounding unavailable or unusable — fall back to model-only knowledge.
+    clean, _s, ferr = _syllabus_model_only(topic, level_line)
+    if not clean:
+        return None, [], ferr or "I couldn't design a course on that. Try rephrasing the topic."
+    return clean, [], None
+
+
+def _parse_lesson_obj(obj, sources):
+    """Shape a raw teaching object into {explanation, key_points, sources} or None."""
+    if not isinstance(obj, dict):
+        return None
+    explanation = (obj.get("explanation") or "").strip()
+    if not explanation:
+        return None
+    key_points = [str(k).strip() for k in (obj.get("key_points") or []) if str(k).strip()]
+    out = {"explanation": explanation, "key_points": key_points[:4]}
+    if sources:
+        out["sources"] = sources
+    return out
+
+
+def _teach_model_only(topic_name: str, ctx: str, level_line: str):
+    """Fallback: teach from the model's own knowledge (no grounding, no sources)."""
     prompt = f"""You are a warm, encouraging tutor teaching a student about "{topic_name}"{ctx}.{level_line}
 Write a short lesson that genuinely TEACHES this in plain language — about 180-220 words. Start simple, build up, and add one concrete example or analogy if it helps something click. Do not ask questions; just explain clearly. Then list 3-4 key points worth remembering.
 
@@ -787,13 +830,38 @@ Return ONLY valid JSON in exactly this shape, nothing else:
         return None, f"The AI model could not be reached: {e}"
     try:
         parsed = json.loads((response.text or "").strip())
-        explanation = (parsed.get("explanation") or "").strip()
-        key_points = [str(k).strip() for k in parsed.get("key_points", []) if str(k).strip()]
     except Exception as e:
         return None, f"Could not parse the lesson: {e}"
-    if not explanation:
+    out = _parse_lesson_obj(parsed, [])
+    if not out:
         return None, "The model did not return a usable lesson. Try again."
-    return {"explanation": explanation, "key_points": key_points[:4]}, None
+    return out, None
+
+
+def _teach_from_topic(topic_name: str, course: str = None, level: str = ""):
+    """Phase 4: generate a tight ~200-word teaching explainer for one lesson,
+    grounded in reputable educational sources (web search) so it teaches from real
+    material rather than the model's memory alone. Falls back to model knowledge if
+    grounding is unavailable. Returns ({explanation, key_points, sources}, error).
+    `course` gives context (the parent course topic); `level` adapts wording.
+    """
+    level_line = f"\n{level}\n" if level else ""
+    ctx = f' as part of a short course on "{course}"' if course else ""
+    prompt = f"""You are a warm, encouraging tutor teaching a student about "{topic_name}"{ctx}.{level_line}
+Research this from REPUTABLE educational sources — prefer universities and their open courseware (MIT OpenCourseWare, .edu / .ac.uk material), Khan Academy, established textbooks (OpenStax), and authoritative references (Britannica, government/scientific bodies). Avoid forums, SEO blogs, and low-quality sites. Base your explanation on what those sources actually say, and keep it accurate.
+
+Write a short lesson that genuinely TEACHES this in plain language — about 180-220 words. Start simple, build up, and add one concrete example or analogy if it helps something click. Do not ask questions; just explain clearly. Then list 3-4 key points worth remembering.
+
+Return ONLY a JSON object in exactly this shape (no prose, no markdown):
+{{ "explanation": "the lesson text (~200 words, plain and friendly)", "key_points": ["string", "string", "string"] }}"""
+
+    obj, sources, _err = _generate_grounded_json(prompt)
+    if obj is not None:
+        out = _parse_lesson_obj(obj, sources)
+        if out:
+            return out, None
+    # Grounding unavailable or unusable — fall back to model-only knowledge.
+    return _teach_model_only(topic_name, ctx, level_line)
 
 
 def _save_quiz(classroom_id, document_id, owner_id, title, clean, origin="manual"):
@@ -1083,6 +1151,96 @@ def _answer_with_web(prompt):
         except Exception:
             continue
     return None
+
+
+# Domains we trust for educational content, most authoritative first. A source's
+# rank is the position of the first pattern its host matches (unmatched = last).
+_REPUTABLE_SOURCE_PATTERNS = [
+    ".edu", ".ac.uk", ".edu.", "ac.jp", "ocw.mit.edu", "khanacademy.org",
+    "khan academy", ".gov", "britannica.com", "nature.com", "science.org",
+    "sciencedirect.com", "jstor.org", "ncbi.nlm.nih.gov", "who.int", "nasa.gov",
+    "oercommons.org", "openstax.org", "coursera.org", "edx.org", "ted.com",
+    "wikipedia.org", "wikibooks.org",
+]
+# Hosts we actively distrust for *teaching* — SEO/forum/UGC noise — pushed to the back.
+_LOW_QUALITY_SOURCE_HOSTS = (
+    "reddit.com", "quora.com", "medium.com", "blogspot.", "wordpress.",
+    "pinterest.", "facebook.com", "tiktok.com", "youtube.com", "answers.com",
+    "coursehero.com", "chegg.com", "studocu.com", "brainly.",
+)
+
+
+def _source_rank(url: str) -> int:
+    """Lower is more reputable. Educational institutions first, UGC/SEO last."""
+    host = ""
+    try:
+        host = (re.sub(r"^https?://", "", url or "").split("/", 1)[0]).lower()
+    except Exception:
+        host = (url or "").lower()
+    if any(bad in host for bad in _LOW_QUALITY_SOURCE_HOSTS):
+        return len(_REPUTABLE_SOURCE_PATTERNS) + 10   # behind everything reputable
+    for i, pat in enumerate(_REPUTABLE_SOURCE_PATTERNS):
+        if pat in host:
+            return i
+    return len(_REPUTABLE_SOURCE_PATTERNS)             # unknown, but ahead of UGC
+
+
+def _rank_sources(sources, limit: int = 4):
+    """Dedupe by host, sort reputable-educational first, cap to `limit`. Input is
+    a list of {title, url} (from _grounding_sources). Returns the same shape."""
+    seen_hosts, out = set(), []
+    for s in sorted(sources or [], key=lambda x: _source_rank(x.get("url", ""))):
+        url = (s.get("url") or "").strip()
+        if not url:
+            continue
+        host = re.sub(r"^https?://", "", url).split("/", 1)[0].lower()
+        if host in seen_hosts:
+            continue
+        seen_hosts.add(host)
+        title = (s.get("title") or "").strip() or host
+        out.append({"title": title, "url": url})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _extract_json(text: str):
+    """Pull a JSON object out of a grounded response. Grounding can't use JSON
+    response-mime, so the model may wrap it in ``` fences or prose. Returns the
+    parsed object or None."""
+    if not text:
+        return None
+    t = text.strip()
+    # Strip a leading ```json / ``` fence if present.
+    fence = re.search(r"```(?:json)?\s*(.+?)```", t, re.DOTALL)
+    if fence:
+        t = fence.group(1).strip()
+    try:
+        return json.loads(t)
+    except Exception:
+        pass
+    # Fall back to the widest {...} span.
+    start, end = t.find("{"), t.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(t[start:end + 1])
+        except Exception:
+            return None
+    return None
+
+
+def _generate_grounded_json(prompt: str):
+    """Run a prompt with Google Search grounding and parse a JSON object from the
+    result. Returns (obj, ranked_sources, error). obj is None if grounding is
+    unavailable or unparseable — callers fall back to model-only generation."""
+    res = _answer_with_web(prompt)
+    if not res:
+        return None, [], "grounding unavailable"
+    text, _model, raw_sources = res
+    obj = _extract_json(text)
+    if obj is None:
+        return None, _rank_sources(raw_sources), "could not parse grounded JSON"
+    return obj, _rank_sources(raw_sources), None
 
 
 @app.post("/ask")
@@ -2408,7 +2566,7 @@ def teach_me(topic: str, user_id: str = Depends(verify_user)):
         return {"error": "Tell me what you'd like to learn."}
     rate_limit(user_id, "teach-me", 5, 3600)   # 5/hour — multi-call generation
 
-    subtopics, err = _syllabus_from_topic(topic, level=_learner_level(user_id))
+    subtopics, _sources, err = _syllabus_from_topic(topic, level=_learner_level(user_id))
     if err:
         return {"error": err}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Linking, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { apiFetch } from '../lib/api';
@@ -32,6 +32,16 @@ export default function LessonScreen({ route, navigation }) {
   }, [lesson.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Pretty host label for a source URL (e.g. "ocw.mit.edu").
+  function hostOf(url) {
+    try {
+      return (url || '').replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+    } catch { return url; }
+  }
+  function openSource(url) {
+    if (url) Linking.openURL(url).catch(() => {});
+  }
 
   // Generate (or fetch cached) the quiz for this lesson, then hand off to Quiz.
   async function startQuiz() {
@@ -90,6 +100,30 @@ export default function LessonScreen({ route, navigation }) {
                 ))}
               </Card>
             ) : null}
+
+            {content?.sources?.length ? (
+              <Card style={{ marginTop: space.lg }}>
+                <View style={styles.srcHeaderRow}>
+                  <Ionicons name="library-outline" size={16} color={palette.inkSoft} />
+                  <Text style={styles.srcHeader}>Sources</Text>
+                </View>
+                <Text style={styles.srcSub}>Based on reputable educational sources</Text>
+                {content.sources.map((s, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[styles.srcRow, i > 0 && styles.kpDivider]}
+                    onPress={() => openSource(s.url)}
+                    activeOpacity={0.6}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.srcTitle} numberOfLines={2}>{s.title || hostOf(s.url)}</Text>
+                      <Text style={styles.srcHost} numberOfLines={1}>{hostOf(s.url)}</Text>
+                    </View>
+                    <Ionicons name="open-outline" size={16} color={palette.primary} />
+                  </TouchableOpacity>
+                ))}
+              </Card>
+            ) : null}
           </ScrollView>
 
           <View style={styles.footer}>
@@ -129,6 +163,12 @@ const styles = StyleSheet.create({
   },
   kpDotText: { color: palette.primaryDark, fontWeight: '800', fontSize: 12 },
   kpText: { ...type.body, flex: 1, lineHeight: 22 },
+  srcHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  srcHeader: { ...type.label },
+  srcSub: { ...type.caption, color: palette.inkSoft, marginTop: 2, marginBottom: space.xs },
+  srcRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: space.md, gap: space.sm },
+  srcTitle: { ...type.body, fontWeight: '600', color: palette.ink },
+  srcHost: { ...type.caption, color: palette.primary, marginTop: 2 },
   footer: {
     padding: space.xl, borderTopWidth: 1, borderTopColor: palette.line, backgroundColor: palette.bg,
   },
