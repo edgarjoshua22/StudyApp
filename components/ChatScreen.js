@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
 import { palette, space, radius, shadow } from '../lib/theme';
+import { RichText } from './ui';
 
 const AI_MODEL = 'Gemini'; // fallback label until a real answer comes back
 
@@ -196,7 +197,7 @@ export default function ChatScreen({ session }) {
             <View style={[styles.bubbleRow, styles.rowLeft]}>
               <View style={styles.aiAvatar}><Text style={styles.aiAvatarText}>🧠</Text></View>
               <View style={[styles.bubble, styles.aiBubble]}>
-                <Text style={styles.aiText}>{item.text}</Text>
+                <RichText text={item.text} style={styles.aiText} />
                 {item.web && item.web.length ? (
                   <View style={styles.sources}>
                     <Text style={styles.sourcesLabel}>🌐 From the web</Text>
